@@ -1,0 +1,25 @@
+# MediaPipe Pose Quick Notes
+
+## Core idea
+
+```python
+results = pose.process(image)
+```
+
+- `results.pose_landmarks` = body landmarks for the current frame.
+- `None` means no person was detected.
+- If detected, you get 33 landmarks.
+
+## Landmark values
+
+Each landmark has:
+- `x`: left-right (normalized 0..1)
+- `y`: up-down (normalized 0..1)
+- `z`: relative depth (not true meters)
+- `visibility`: confidence for that point
+
+
+
+mp_pose.POSE_CONNECTIONS
+whick landmark is connected to which
+
