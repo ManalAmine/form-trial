@@ -23,3 +23,14 @@ Each landmark has:
 mp_pose.POSE_CONNECTIONS
 whick landmark is connected to which
 
+
+
+# to see all available landmark names
+for lndmrk in mp_pose.PoseLandmark:
+    print(lndmrk)
+
+# to access detected landmarks from current frame
+if results.pose_landmarks:
+    landmarks = results.pose_landmarks.landmark
+    left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+    print(left_shoulder.x, left_shoulder.y, left_shoulder.z, left_shoulder.visibility)
