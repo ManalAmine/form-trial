@@ -1,0 +1,26 @@
+#grabbing the landmarks we only grab x to begin with then we did y
+            #shoulder map to a elbow to b and wrist to c
+            left_shoulder =[landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+            left_elbow =[landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+            left_wrist =[landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+            left_angle = calculateangle(left_shoulder, left_elbow, left_wrist)
+
+            right_shoulder =[landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+            right_elbow =[landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+            right_wrist =[landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+            right_angle = calculateangle(right_shoulder, right_elbow, right_wrist)
+
+            #visulize
+            cv2.putText(image, str(int(left_angle)), 
+                tuple(np.multiply(left_elbow, [640, 480]).astype(int)),  # to put the angle text at the elbow
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # font and color of the text
+            cv2.putText(image, str(int(right_angle)), 
+                tuple(np.multiply(right_elbow, [640, 480]).astype(int)),  # to put the angle text at the elbow
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # font and color of the text
+            
+            # Curl counter logic (count only when both arms curl together)
+            if left_angle > 160 and right_angle > 160:
+                stage = "down"
+            if left_angle < 30 and right_angle < 30 and stage == 'down':
+                stage = "up"
+                counter += 1
