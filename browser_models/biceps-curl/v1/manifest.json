@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "exerciseId": "biceps-curl",
+  "modelVersion": "v1",
+  "sourceModelFile": "bicep_curl_model.pkl",
+  "sourceBundleVersion": "v4_binary_quality_plus_active_reason_validation",
+  "runtime": "onnxruntime-web",
+  "recommendedExecutionProvider": "wasm",
+  "featureColumns": [
+    "min_left_angle",
+    "max_left_angle",
+    "min_right_angle",
+    "max_right_angle",
+    "rep_duration",
+    "left_rom",
+    "right_rom",
+    "elbow_rom_diff",
+    "concentric_duration",
+    "eccentric_duration",
+    "left_peak_velocity",
+    "right_peak_velocity",
+    "torso_lean_mean",
+    "torso_lean_max",
+    "torso_sway",
+    "left_elbow_drift",
+    "right_elbow_drift",
+    "pose_visibility_mean",
+    "pose_visibility_min",
+    "tracking_lost_ratio"
+  ],
+  "thresholds": {
+    "goodProbability": 0.5,
+    "errorProbability": 0.45
+  },
+  "qualityModel": {
+    "type": "onnx",
+    "file": "quality.onnx",
+    "threshold": 0.5,
+    "inputName": "float_input",
+    "labelOutputName": "label",
+    "probabilityOutputName": "probabilities",
+    "classes": [
+      0,
+      1
+    ],
+    "positiveClass": 1,
+    "positiveClassIndex": 1
+  },
+  "errorModels": [
+    {
+      "key": "err_partial_rom",
+      "label": "Partial range of motion",
+      "shortLabel": "partial",
+      "voiceLabel": "partial range of motion",
+      "threshold": 0.45,
+      "type": "onnx",
+      "file": "err_partial_rom.onnx",
+      "inputName": "float_input",
+      "labelOutputName": "label",
+      "probabilityOutputName": "probabilities",
+      "classes": [
+        0,
+        1
+      ],
+      "positiveClass": 1,
+      "positiveClassIndex": 1
+    },
+    {
+      "key": "err_too_fast",
+      "label": "Too fast",
+      "shortLabel": "fast",
+      "voiceLabel": "too fast",
+      "threshold": 0.45,
+      "type": "onnx",
+      "file": "err_too_fast.onnx",
+      "inputName": "float_input",
+      "labelOutputName": "label",
+      "probabilityOutputName": "probabilities",
+      "classes": [
+        0,
+        1
+      ],
+      "positiveClass": 1,
+      "positiveClassIndex": 1
+    },
+    {
+      "key": "err_torso_sway",
+      "label": "Torso sway",
+      "shortLabel": "torso",
+      "voiceLabel": "torso sway",
+      "threshold": 0.45,
+      "type": "onnx",
+      "file": "err_torso_sway.onnx",
+      "inputName": "float_input",
+      "labelOutputName": "label",
+      "probabilityOutputName": "probabilities",
+      "classes": [
+        0,
+        1
+      ],
+      "positiveClass": 1,
+      "positiveClassIndex": 1
+    },
+    {
+      "key": "err_asymmetry",
+      "label": "Arm asymmetry",
+      "shortLabel": "asymmetry",
+      "voiceLabel": "arm asymmetry",
+      "threshold": 0.45,
+      "type": "onnx",
+      "file": "err_asymmetry.onnx",
+      "inputName": "float_input",
+      "labelOutputName": "label",
+      "probabilityOutputName": "probabilities",
+      "classes": [
+        0,
+        1
+      ],
+      "positiveClass": 1,
+      "positiveClassIndex": 1
+    }
+  ],
+  "runtimeMetadata": {}
+}

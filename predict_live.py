@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 import time
 
 import cv2
@@ -6,6 +8,7 @@ import joblib
 import mediapipe as mp
 import numpy as np
 import pandas as pd
+import sklearn
 
 try:
     mp_drawing = mp.solutions.drawing_utils
@@ -17,7 +20,7 @@ except AttributeError as exc:
     MEDIAPIPE_ERROR = exc
 
 WINDOW_NAME = "Bicep Curl Live Prediction"
-MODEL_FILE = "bicep_curl_model.pkl"
+MODEL_FILE = os.getenv("MODEL_FILE", "bicep_curl_model.pkl")
 
 FEATURE_COLUMNS = [
     "min_left_angle",
@@ -69,6 +72,20 @@ def get_env_float(name, default_value):
         return default_value
 
 
+def get_env_int(name, default_value):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default_value
+
+    try:
+        return int(raw_value)
+    except ValueError:
+        print(
+            f"[predict_live] Invalid {name}={raw_value!r}; using default {default_value}."
+        )
+        return default_value
+
+
 # Predict GOOD only when model confidence is at/above this threshold.
 # With the current small dataset, 0.50 is less punitive than 0.60.
 GOOD_PROBA_THRESHOLD = min(max(get_env_float("GOOD_PROBA_THRESHOLD", 0.50), 0.0), 1.0)
@@ -78,6 +95,12 @@ DEBUG_REP_SUMMARY = os.getenv("DEBUG_REP_SUMMARY", "1").strip().lower() not in {
     "false",
     "no",
 }
+VOICE_FEEDBACK_ENABLED = os.getenv("VOICE_FEEDBACK_ENABLED", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+VOICE_FEEDBACK_RATE = max(min(get_env_int("VOICE_FEEDBACK_RATE", 1), 10), -10)
 
 # Tracking quality gates. If a rep fails any gate, we ask for RETAKE REP.
 MIN_POSE_VISIBILITY_MEAN = 0.65
@@ -93,6 +116,14 @@ MAX_TOP_WRIST_DISTANCE_RATIO_FULL = 0.95
 MAX_TOP_WRIST_DISTANCE_RATIO_PARTIAL = 1.20
 MAX_TOP_SHOULDER_ANGLE = 60.0
 MAX_SHOULDER_ANGLE_RANGE = 45.0
+
+VOICE_REASON_LABELS = {
+    "partial": "partial range of motion",
+    "fast": "too fast",
+    "torso": "torso sway",
+    "asymmetry": "arm asymmetry",
+    "tracking quality": "tracking quality is too low",
+}
 
 
 def calculate_angle(a, b, c):
@@ -221,7 +252,11 @@ def build_feature_frame(feature_row, feature_columns):
     return pd.DataFrame([ordered_row], columns=feature_columns)
 
 
-def format_rep_debug_summary(feature_row, good_probability=None, tracking_reasons=None):
+def format_rep_debug_summary(
+    feature_row,
+    good_probability=None,
+    tracking_reasons=None,
+):
     summary_parts = [
         f"minL={feature_row.get('min_left_angle', 0.0):.1f}",
         f"minR={feature_row.get('min_right_angle', 0.0):.1f}",
@@ -279,9 +314,9 @@ def predict_error_reasons(error_models, feature_frame):
     return reason_predictions
 
 
-def format_reason_text(predicted_value, reason_predictions):
+def get_predicted_reason_label(predicted_value, reason_predictions):
     if predicted_value == 1:
-        return "Reason: none"
+        return None
 
     strong_reasons = [
         reason
@@ -290,13 +325,61 @@ def format_reason_text(predicted_value, reason_predictions):
     ]
 
     if strong_reasons:
-        return f"Reason: {strong_reasons[0]['label']}"
+        return strong_reasons[0]["label"]
 
     if reason_predictions:
-        top_reason = reason_predictions[0]
-        return f"Reason: {top_reason['label']}"
+        return reason_predictions[0]["label"]
 
-    return "Reason: none"
+    return None
+
+
+def format_reason_text(predicted_value, reason_predictions):
+    reason_label = get_predicted_reason_label(predicted_value, reason_predictions)
+    if reason_label is None:
+        return "Reason: none"
+
+    return f"Reason: {reason_label}"
+
+
+def normalize_reason_for_voice(reason_label):
+    return VOICE_REASON_LABELS.get(reason_label, reason_label)
+
+
+def speak_text_async(text):
+    if not VOICE_FEEDBACK_ENABLED or not text or os.name != "nt":
+        return
+
+    escaped_text = text.replace("'", "''")
+    powershell_script = (
+        "Add-Type -AssemblyName System.Speech; "
+        "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        f"$speaker.Rate = {VOICE_FEEDBACK_RATE}; "
+        f"$speaker.Speak('{escaped_text}')"
+    )
+
+    try:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-Command", powershell_script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as exc:
+        print(f"[predict_live] Voice feedback unavailable: {exc}")
+
+
+def speak_rep_feedback(predicted_value, reason_predictions):
+    if predicted_value == 1:
+        speak_text_async("Good rep.")
+        return
+
+    reason_label = get_predicted_reason_label(predicted_value, reason_predictions)
+    if reason_label is None:
+        speak_text_async("Bad rep.")
+        return
+
+    spoken_reason = normalize_reason_for_voice(reason_label)
+    speak_text_async(f"Bad rep. {spoken_reason}.")
 
 
 def evaluate_tracking_quality(feature_row):
@@ -397,6 +480,33 @@ def load_model_bundle():
         feature_columns = FEATURE_COLUMNS
 
     error_models = bundle.get("error_models", {})
+    runtime_metadata = bundle.get("runtime_metadata", {})
+    if not runtime_metadata:
+        print(
+            "[predict_live] Warning: model bundle has no runtime metadata. "
+            "Retrain once with train_model.ps1 to lock it to the .venv environment."
+        )
+    trained_python = runtime_metadata.get("python_executable")
+    trained_sklearn = runtime_metadata.get("sklearn_version")
+    current_python = os.path.abspath(sys.executable)
+    current_sklearn = sklearn.__version__
+
+    mismatch_messages = []
+    if trained_python and os.path.abspath(trained_python).lower() != current_python.lower():
+        mismatch_messages.append(
+            f"model was trained with {trained_python} but you are running {current_python}"
+        )
+    if trained_sklearn and trained_sklearn != current_sklearn:
+        mismatch_messages.append(
+            f"model was trained with scikit-learn {trained_sklearn} but you are running {current_sklearn}"
+        )
+
+    if mismatch_messages:
+        print("[predict_live] Warning: model/runtime environment mismatch detected.")
+        for message in mismatch_messages:
+            print(f"[predict_live] {message}")
+        if trained_python:
+            print(f"[predict_live] Recommended run: {trained_python} predict_live.py")
 
     return bundle, quality_model, feature_columns, error_models
 
@@ -694,6 +804,9 @@ def main():
                             stage = "retake"
                             prediction_text = "Prediction: RETAKE REP"
                             reason_text = "Reason: tracking quality"
+                            speak_text_async(
+                                "Retake rep. Tracking quality is too low."
+                            )
                         else:
                             curl_ok, curl_reasons = evaluate_curl_motion(
                                 rep_reached_full,
@@ -707,6 +820,9 @@ def main():
                             if not curl_ok:
                                 prediction_text = "Prediction: INVALID REP"
                                 reason_text = f"Reason: {curl_reasons[0]}"
+                                speak_text_async(
+                                    f"Invalid rep. {curl_reasons[0]}."
+                                )
                                 if DEBUG_REP_SUMMARY:
                                     print(
                                         "[rep-debug] invalid | "
@@ -718,7 +834,10 @@ def main():
                                     )
                                 stage = "invalid"
                             else:
-                                feature_frame = build_feature_frame(feature_row, feature_columns)
+                                feature_frame = build_feature_frame(
+                                    feature_row,
+                                    feature_columns,
+                                )
                                 good_probability = None
                                 reason_predictions = []
 
@@ -735,17 +854,25 @@ def main():
                                             else 0
                                         )
                                     else:
-                                        predicted_value = int(model.predict(feature_frame)[0])
+                                        predicted_value = int(
+                                            model.predict(feature_frame)[0]
+                                        )
                                 else:
                                     predicted_value = int(model.predict(feature_frame)[0])
 
-                                predicted_text_value = "GOOD" if predicted_value == 1 else "BAD"
+                                predicted_text_value = (
+                                    "GOOD" if predicted_value == 1 else "BAD"
+                                )
                                 prediction_text = f"Prediction: {predicted_text_value}"
                                 reason_predictions = predict_error_reasons(
                                     error_models,
                                     feature_frame,
                                 )
                                 reason_text = format_reason_text(
+                                    predicted_value,
+                                    reason_predictions,
+                                )
+                                speak_rep_feedback(
                                     predicted_value,
                                     reason_predictions,
                                 )
