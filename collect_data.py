@@ -351,7 +351,7 @@ def draw_overlay(
     )
     cv2.putText(
         image,
-        "1=partial 2=fast 3=torso 4=asym | paused: elbow, shoulder, wrist, control",
+        "1=partial (up/down ROM) 2=fast 3=torso 4=asym | paused: elbow, shoulder, wrist, control",
         (130, 158),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.41,
@@ -398,7 +398,6 @@ def main():
     rep_lost_frames = 0
     rep_reached_partial = False
     rep_reached_full = False
-    rep_returned_full = False
     pending_rep = None
 
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -500,7 +499,6 @@ def main():
                         rep_lost_frames = 0
                         rep_reached_partial = False
                         rep_reached_full = False
-                        rep_returned_full = False
                         stage = "down"
                         status_message = (
                             "Rep started. Curl up fully or halfway, then return down."
@@ -531,12 +529,12 @@ def main():
                             rep_reached_full = True
                             stage = "up"
                             status_message = "Top reached. Lower both arms to finish the rep."
-                        elif (
+
+                        if (
                             left_angle > RETURN_THRESHOLD
                             and right_angle > RETURN_THRESHOLD
                             and rep_reached_partial
                         ):
-                            rep_returned_full = arms_down
                             counter += 1
 
                             features = build_rep_features(
@@ -571,7 +569,6 @@ def main():
                             rep_lost_frames = 0
                             rep_reached_partial = False
                             rep_reached_full = False
-                            rep_returned_full = False
                             stage = "awaiting labels"
                             status_message = (
                                 f"Rep {counter} done. Toggle 1-4, then S (no errors = good)."

@@ -117,6 +117,9 @@ Current main error labels are:
 - `err_torso_sway`
 - `err_asymmetry`
 
+`err_partial_rom` should be used for incomplete range of motion in either
+direction: not curling high enough or not lowering fully back down.
+
 Additional error columns also exist in the dataset schema:
 
 - `err_elbow_drift`
@@ -208,6 +211,50 @@ Compared with the initial prototype, the project now includes:
 - Collect data: `python collect_data.py`
 - Train model: open and run `rfmodel.ipynb`
 - Live prediction: `python predict_live.py`
+
+## Browser ONNX Export
+
+The browser app should not load `bicep_curl_model.pkl` directly. The Python
+bundle is exported into a small browser model package:
+
+- `quality.onnx`
+- `err_partial_rom.onnx`
+- `err_too_fast.onnx`
+- `err_torso_sway.onnx`
+- `err_asymmetry.onnx`
+- `manifest.json`
+
+Export the current model bundle:
+
+```powershell
+.\.venv\Scripts\python.exe export_to_onnx.py
+```
+
+Validate that the ONNX files match the Python Random Forest probabilities:
+
+```powershell
+.\.venv\Scripts\python.exe validate_onnx_exports.py
+```
+
+The generated package is written to:
+
+```text
+browser_models/biceps-curl/v1/
+```
+
+Copy that folder into the real app frontend's public assets, for example:
+
+```text
+frontend/public/models/biceps-curl/v1/
+```
+
+The real browser flow should be:
+
+1. run MediaPipe Pose in the frontend
+2. build the same 20 rep-level features
+3. run ONNX Runtime Web with the `wasm` execution provider
+4. show `GOOD` or `BAD`
+5. if bad, rank the four error models and show the strongest reason
 
 ## Short Summary
 
