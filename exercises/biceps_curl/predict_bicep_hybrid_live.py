@@ -184,6 +184,21 @@ VOICE_FEEDBACK_ENABLED = os.getenv("VOICE_FEEDBACK_ENABLED", "1").strip().lower(
 }
 VOICE_FEEDBACK_RATE = max(min(get_env_int("VOICE_FEEDBACK_RATE", 1), 10), -10)
 
+POSE_SMOOTHING_ALPHA = min(max(get_env_float("POSE_SMOOTHING_ALPHA", 0.35), 0.05), 1.0)
+POSE_FAST_SMOOTHING_ALPHA = min(
+    max(get_env_float("POSE_FAST_SMOOTHING_ALPHA", 0.78), POSE_SMOOTHING_ALPHA),
+    1.0,
+)
+POSE_JITTER_DEADZONE_PX = max(get_env_float("POSE_JITTER_DEADZONE_PX", 4.0), 0.0)
+POSE_FAST_MOVE_PX = max(
+    get_env_float("POSE_FAST_MOVE_PX", 28.0),
+    POSE_JITTER_DEADZONE_PX + 1.0,
+)
+POSE_SMOOTHING_RESET_SECONDS = max(
+    get_env_float("POSE_SMOOTHING_RESET_SECONDS", 0.35),
+    0.0,
+)
+
 
 def calculate_angle(a, b, c):
     a = np.array(a, dtype=np.float64)
@@ -208,6 +223,74 @@ def calculate_torso_lean(shoulder_mid, hip_mid):
 
 def calculate_distance(point_a, point_b):
     return float(np.linalg.norm(np.array(point_a) - np.array(point_b)))
+
+
+class PoseLandmarkSmoother:
+    def __init__(
+        self,
+        alpha,
+        fast_alpha,
+        deadzone_px,
+        fast_move_px,
+        reset_seconds,
+    ):
+        self.alpha = alpha
+        self.fast_alpha = fast_alpha
+        self.deadzone_px = deadzone_px
+        self.fast_move_px = fast_move_px
+        self.reset_seconds = reset_seconds
+        self.previous_points = None
+        self.previous_time = None
+
+    def reset(self):
+        self.previous_points = None
+        self.previous_time = None
+
+    def smooth(self, pose_landmarks, frame_width, frame_height, frame_time):
+        landmarks = pose_landmarks.landmark
+        if (
+            self.previous_points is None
+            or len(self.previous_points) != len(landmarks)
+            or (
+                self.previous_time is not None
+                and frame_time - self.previous_time > self.reset_seconds
+            )
+        ):
+            self.previous_points = [
+                (landmark.x, landmark.y, landmark.z) for landmark in landmarks
+            ]
+            self.previous_time = frame_time
+            return pose_landmarks
+
+        smoothed_points = []
+        for landmark, previous in zip(landmarks, self.previous_points):
+            raw_x = landmark.x
+            raw_y = landmark.y
+            raw_z = landmark.z
+            distance_px = float(
+                np.hypot(
+                    (raw_x - previous[0]) * frame_width,
+                    (raw_y - previous[1]) * frame_height,
+                )
+            )
+
+            if distance_px <= self.deadzone_px:
+                smooth_x, smooth_y, smooth_z = previous
+            else:
+                movement_ratio = min(distance_px / self.fast_move_px, 1.0)
+                alpha = self.alpha + (self.fast_alpha - self.alpha) * movement_ratio
+                smooth_x = previous[0] + alpha * (raw_x - previous[0])
+                smooth_y = previous[1] + alpha * (raw_y - previous[1])
+                smooth_z = previous[2] + alpha * (raw_z - previous[2])
+
+            landmark.x = smooth_x
+            landmark.y = smooth_y
+            landmark.z = smooth_z
+            smoothed_points.append((smooth_x, smooth_y, smooth_z))
+
+        self.previous_points = smoothed_points
+        self.previous_time = frame_time
+        return pose_landmarks
 
 
 def compute_peak_velocity(angles, timestamps):
@@ -898,6 +981,12 @@ def main():
     bundle, model, feature_columns = load_model_bundle()
     print(f"[hybrid-live] Loaded model bundle: {bundle.get('version', 'unknown')}")
     print(f"[hybrid-live] GOOD threshold: {GOOD_PROBA_THRESHOLD:.2f}")
+    print(
+        "[hybrid-live] Pose smoothing: "
+        f"alpha={POSE_SMOOTHING_ALPHA:.2f}, "
+        f"fast_alpha={POSE_FAST_SMOOTHING_ALPHA:.2f}, "
+        f"deadzone={POSE_JITTER_DEADZONE_PX:.1f}px"
+    )
 
     use_dshow = os.name == "nt" and hasattr(cv2, "CAP_DSHOW")
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) if use_dshow else cv2.VideoCapture(0)
@@ -917,10 +1006,17 @@ def main():
     prediction_text = "Prediction: --"
     reason_text = "Reason: none"
     rep_state = reset_rep_state()
+    landmark_smoother = PoseLandmarkSmoother(
+        POSE_SMOOTHING_ALPHA,
+        POSE_FAST_SMOOTHING_ALPHA,
+        POSE_JITTER_DEADZONE_PX,
+        POSE_FAST_MOVE_PX,
+        POSE_SMOOTHING_RESET_SECONDS,
+    )
 
     with mp_pose.Pose(
         model_complexity=0,
-        smooth_landmarks=False,
+        smooth_landmarks=True,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     ) as pose:
@@ -940,6 +1036,12 @@ def main():
             frame_height, frame_width = image.shape[:2]
 
             if results.pose_landmarks:
+                landmark_smoother.smooth(
+                    results.pose_landmarks,
+                    frame_width,
+                    frame_height,
+                    frame_time,
+                )
                 landmarks = results.pose_landmarks.landmark
 
                 left_shoulder = [
