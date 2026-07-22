@@ -7,3 +7,12 @@ __pycache__/
 .jupyter_runtime/
 .tmp/
 .deps/
+data/kaggle/
+data/raw_videos/
+
+# Local squat collection/training artifacts. Participant CSV contributions can
+# use unique filenames (for example p002_session_01.csv) when intentionally shared.
+exercises/side_view_squat/data/side_squat_reps.csv
+exercises/side_view_squat/squat_reps_dataset.csv
+exercises/side_view_squat/models/*.pkl
+exercises/side_view_squat/debug/
