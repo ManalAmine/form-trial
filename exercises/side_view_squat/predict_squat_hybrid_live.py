@@ -31,6 +31,7 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_MODEL = SCRIPT_DIR / "models" / MODEL_FILENAME
 WINDOW_NAME = "VITAL-PT Side Squat Hybrid Coach"
+DEFAULT_WINDOW_SIZE = (1280, 720)
 
 
 class DebugLogger:
@@ -93,21 +94,24 @@ def _put(image, text: str, y: int, color=(255, 255, 255), scale=0.55):
     cv2.putText(image, text, (12, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 2, cv2.LINE_AA)
 
 
-def _draw_overlay(image, tracker, assessment, result, measurement):
-    cv2.rectangle(image, (0, 0), (image.shape[1], 198), (38, 38, 38), -1)
-    _put(image, f"Phase: {tracker.phase}    Reps: {tracker.rep_number}", 25)
-    if measurement:
-        _put(image, f"Knee {measurement['knee_angle']:.1f}  Hip {measurement['hip_angle']:.1f}  Torso {measurement['torso_lean']:.1f}", 52)
-        _put(image, f"Side: {measurement['side']}  Pose visibility: {measurement['visibility']:.2f}", 78)
-    _put(image, assessment.guidance, 104, (120, 230, 255))
+def _draw_overlay(image, tracker, assessment, result):
+    panel_height = 92 if result else 62
+    panel = image.copy()
+    cv2.rectangle(panel, (0, 0), (image.shape[1], panel_height), (25, 25, 25), -1)
+    cv2.addWeighted(panel, 0.72, image, 0.28, 0, image)
+
+    _put(image, f"{tracker.phase}  |  Reps: {tracker.rep_number}", 24, scale=0.5)
     if result:
         probability = "--" if result["good_probability"] is None else f"{result['good_probability']:.2f}"
         color = (130, 255, 130) if result["quality"] == "GOOD" else (120, 210, 255)
-        _put(image, f"Latest: {result['quality']}  P(good): {probability}  Reliability: {result['pose_reliability']:.2f}", 136, color)
-        _put(image, result["feedback"], 165, color)
+        if assessment.reliable:
+            _put(image, f"Latest: {result['quality']}  |  P(good): {probability}", 52, color, 0.48)
+            _put(image, result["feedback"], 80, color, 0.48)
+        else:
+            _put(image, assessment.guidance, 52, (120, 230, 255), 0.48)
+            _put(image, f"Latest: {result['quality']}  |  P(good): {probability}", 80, color, 0.48)
     else:
-        _put(image, "Latest: --", 136)
-    _put(image, "Q/Esc quit", 190, (180, 180, 180), 0.45)
+        _put(image, assessment.guidance, 52, (120, 230, 255), 0.48)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -130,10 +134,13 @@ def main() -> None:
         raise RuntimeError(f"Could not open camera {args.camera}.")
     latest_result = None
     previous_phase = tracker.phase
+    fullscreen = False
     mp_pose = mp.solutions.pose
     mp_drawing = mp.solutions.drawing_utils
 
     try:
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW_NAME, *DEFAULT_WINDOW_SIZE)
         with mp_pose.Pose(model_complexity=1, smooth_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
             while cap.isOpened():
                 ok, frame = cap.read()
@@ -180,9 +187,17 @@ def main() -> None:
 
                 if results.pose_landmarks:
                     mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-                _draw_overlay(frame, tracker, assessment, latest_result, measurement)
+                _draw_overlay(frame, tracker, assessment, latest_result)
                 cv2.imshow(WINDOW_NAME, frame)
-                if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("f"):
+                    fullscreen = not fullscreen
+                    cv2.setWindowProperty(
+                        WINDOW_NAME,
+                        cv2.WND_PROP_FULLSCREEN,
+                        cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL,
+                    )
+                elif key in (ord("q"), 27):
                     break
     finally:
         logger.close()
