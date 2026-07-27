@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exerciseId": "biceps-curl",
-  "modelVersion": "v1",
-  "sourceModelFile": "bicep_curl_model.pkl",
-  "sourceBundleVersion": "v4_binary_quality_plus_active_reason_validation",
+  "exerciseName": "bicep_curl",
+  "modelVersion": "bicep_curl_hybrid_quality_only_v1",
+  "sourceModelFile": "exercises/biceps_curl/bicep_curl_hybrid_quality_model.pkl",
+  "sourceBundleVersion": "bicep_curl_hybrid_quality_only_v1",
   "runtime": "onnxruntime-web",
   "recommendedExecutionProvider": "wasm",
   "featureColumns": [
@@ -30,13 +31,15 @@
   ],
   "thresholds": {
     "goodProbability": 0.5,
-    "errorProbability": 0.45
+    "ruleOverrideGoodProbability": 0.65,
+    "noRuleGoodProbabilityFloor": 0.5
   },
   "qualityModel": {
     "type": "onnx",
     "file": "quality.onnx",
     "threshold": 0.5,
     "inputName": "float_input",
+    "outputName": "probabilities",
     "labelOutputName": "label",
     "probabilityOutputName": "probabilities",
     "classes": [
@@ -46,79 +49,85 @@
     "positiveClass": 1,
     "positiveClassIndex": 1
   },
-  "errorModels": [
-    {
-      "key": "err_partial_rom",
-      "label": "Partial range of motion",
-      "shortLabel": "partial",
-      "voiceLabel": "partial range of motion",
-      "threshold": 0.45,
-      "type": "onnx",
-      "file": "err_partial_rom.onnx",
-      "inputName": "float_input",
-      "labelOutputName": "label",
-      "probabilityOutputName": "probabilities",
-      "classes": [
-        0,
-        1
-      ],
-      "positiveClass": 1,
-      "positiveClassIndex": 1
+  "errorModels": [],
+  "reasonRules": {
+    "engine": "rule_based_bicep_curl_hybrid_v1",
+    "selectionMode": "severity_weighted",
+    "thresholds": {
+      "goodProbability": 0.5,
+      "ruleOverrideGoodProbability": 0.65,
+      "noRuleGoodProbabilityFloor": 0.5,
+      "minPoseVisibilityMean": 0.65,
+      "minPoseVisibilityMin": 0.35,
+      "maxTrackingLostRatio": 0.15,
+      "downThreshold": 160.0,
+      "startMovementThreshold": 150.0,
+      "minCurlBendThreshold": 130.0,
+      "fullCurlTopThreshold": 65.0,
+      "returnThreshold": 150.0,
+      "minPartialHoldFrames": 3,
+      "minFullTopHoldFrames": 3,
+      "minReturnHoldFrames": 2,
+      "minElbowRom": 35.0,
+      "partialRomMinRom": 50.0,
+      "fullTopElbowAngle": 65.0,
+      "tooFastRepDuration": 1.5,
+      "tooFastConcentricDuration": 0.7,
+      "tooFastEccentricDuration": 0.25,
+      "tooFastPeakVelocity": 320.0,
+      "tooFastMeanConcentricVelocity": 220.0,
+      "tooFastComboRepDuration": 1.9,
+      "tooFastComboMeanConcentricVelocity": 150.0,
+      "maxTorsoSway": 8.0,
+      "maxTorsoLean": 22.0,
+      "maxElbowRomDiff": 25.0,
+      "maxElbowDrift": 0.15,
+      "maxElbowDriftDiff": 0.08,
+      "maxArmTimingDiff": 0.75,
+      "maxArmTimingRatio": 0.55,
+      "minReasonSeverity": 0.05
     },
-    {
-      "key": "err_too_fast",
-      "label": "Too fast",
-      "shortLabel": "fast",
-      "voiceLabel": "too fast",
-      "threshold": 0.45,
-      "type": "onnx",
-      "file": "err_too_fast.onnx",
-      "inputName": "float_input",
-      "labelOutputName": "label",
-      "probabilityOutputName": "probabilities",
-      "classes": [
-        0,
-        1
-      ],
-      "positiveClass": 1,
-      "positiveClassIndex": 1
+    "baseScores": {
+      "partial range of motion": 0.95,
+      "too fast": 0.9,
+      "torso sway": 0.85,
+      "arm asymmetry": 0.7
     },
-    {
-      "key": "err_torso_sway",
-      "label": "Torso sway",
-      "shortLabel": "torso",
-      "voiceLabel": "torso sway",
-      "threshold": 0.45,
-      "type": "onnx",
-      "file": "err_torso_sway.onnx",
-      "inputName": "float_input",
-      "labelOutputName": "label",
-      "probabilityOutputName": "probabilities",
-      "classes": [
-        0,
-        1
-      ],
-      "positiveClass": 1,
-      "positiveClassIndex": 1
+    "scoring": {
+      "peakVelocityReasonWeight": 0.0,
+      "maxPeakVelocityReasonSeverity": 0.6
     },
-    {
-      "key": "err_asymmetry",
-      "label": "Arm asymmetry",
-      "shortLabel": "asymmetry",
-      "voiceLabel": "arm asymmetry",
-      "threshold": 0.45,
-      "type": "onnx",
-      "file": "err_asymmetry.onnx",
-      "inputName": "float_input",
-      "labelOutputName": "label",
-      "probabilityOutputName": "probabilities",
-      "classes": [
-        0,
-        1
-      ],
-      "positiveClass": 1,
-      "positiveClassIndex": 1
+    "displayReasonLabels": {
+      "partial range of motion": "partial range of motion",
+      "too fast": "too fast",
+      "torso sway": "body swing",
+      "arm asymmetry": "uneven arm movement",
+      "check your form": "check your form",
+      "tracking quality": "camera tracking issue"
+    },
+    "voiceReasonLabels": {
+      "partial range of motion": "use full range of motion",
+      "too fast": "slow down",
+      "torso sway": "keep your body still",
+      "arm asymmetry": "move both arms evenly",
+      "check your form": "check your form",
+      "tracking quality": "make sure your arms are visible"
+    },
+    "voiceFeedback": {
+      "GOOD": "Good rep.",
+      "BAD": {
+        "partial range of motion": "Bad rep. Use full range of motion.",
+        "too fast": "Bad rep. Slow down.",
+        "torso sway": "Bad rep. Keep your body still.",
+        "arm asymmetry": "Bad rep. Move both arms evenly.",
+        "check your form": "Bad rep. Check your form."
+      },
+      "RETAKE REP": "Retake rep. Make sure your arms are visible.",
+      "INVALID REP": "Invalid rep. Complete a full curl."
     }
-  ],
-  "runtimeMetadata": {}
+  },
+  "runtimeMetadata": {
+    "python_version": "3.12.7",
+    "sklearn_version": "1.8.0"
+  }
 }

@@ -1,0 +1,566 @@
+{
+  "exercise_id": "side-view-squat",
+  "exercise_name": "side_view_squat",
+  "model_version": "side_squat_hybrid_quality_v1",
+  "model_file": "quality.onnx",
+  "model_sha256": "b777401dc2492a84eda50fbda5c57f81a9d869b44ab609f0399ff06116108df6",
+  "input": {
+    "name": "float_input",
+    "dtype": "float32",
+    "shape": [
+      null,
+      33
+    ]
+  },
+  "output_names": [
+    "label",
+    "probabilities"
+  ],
+  "class_order": [
+    0,
+    1
+  ],
+  "feature_names": [
+    "min_knee_angle",
+    "max_knee_angle",
+    "knee_rom",
+    "knee_angle_at_bottom",
+    "max_descent_knee_velocity",
+    "max_ascent_knee_velocity",
+    "min_hip_angle",
+    "max_hip_angle",
+    "hip_rom",
+    "hip_angle_at_bottom",
+    "hip_vertical_drop",
+    "hip_knee_depth_at_bottom",
+    "min_ankle_angle",
+    "max_ankle_angle",
+    "ankle_rom",
+    "ankle_angle_at_bottom",
+    "standing_torso_lean",
+    "torso_lean_at_bottom",
+    "max_torso_lean",
+    "torso_lean_range",
+    "heel_lift_max",
+    "heel_lift_bottom_fraction",
+    "hip_shoulder_rise_difference",
+    "movement_smoothness",
+    "rep_duration",
+    "descent_duration",
+    "bottom_duration",
+    "ascent_duration",
+    "descent_ascent_ratio",
+    "pose_visibility_mean",
+    "pose_visibility_min",
+    "valid_frame_ratio",
+    "valid_frame_count"
+  ],
+  "probability_thresholds": {
+    "high_confidence_good": 0.65,
+    "high_confidence_bad": 0.35
+  },
+  "hardcoded_rule_configuration": {
+    "values": {
+      "calibration_frames": 20,
+      "phase_confirm_frames": 3,
+      "bottom_confirm_frames": 2,
+      "ascent_confirm_frames": 2,
+      "measurement_smoothing_window": 3,
+      "maximum_consecutive_invalid_frames": 8,
+      "return_confirm_frames": 3,
+      "visibility_threshold": 0.55,
+      "core_visibility_threshold": 0.35,
+      "reliable_visibility_mean": 0.72,
+      "reliable_visibility_min": 0.35,
+      "minimum_valid_frame_ratio": 0.85,
+      "minimum_valid_frames": 15,
+      "maximum_side_width_ratio": 0.34,
+      "side_switch_visibility_margin": 0.12,
+      "minimum_body_frame_fraction": 0.42,
+      "maximum_body_frame_fraction": 0.94,
+      "frame_edge_margin": 0.025,
+      "standing_knee_min": 150.0,
+      "standing_hip_min": 145.0,
+      "descent_knee_delta": 10.0,
+      "descent_hip_drop": 0.025,
+      "minimum_rep_rom": 42.0,
+      "bottom_knee_angle": 122.0,
+      "bottom_hip_drop": 0.1,
+      "bottom_velocity": 45.0,
+      "ascent_velocity": 12.0,
+      "return_knee_tolerance": 14.0,
+      "return_hip_tolerance": 16.0,
+      "lockout_knee_delta": 10.0,
+      "lockout_hip_delta": 12.0,
+      "maximum_rep_duration": 10.0,
+      "minimum_rep_duration": 0.65,
+      "shallow_knee_angle": 128.0,
+      "shallow_min_rom": 55.0,
+      "shallow_hip_knee_margin": -0.1,
+      "shallow_min_hip_drop": 0.1,
+      "heel_lift_threshold": 0.045,
+      "heel_lift_strong_threshold": 0.06,
+      "heel_lift_bottom_fraction": 0.25,
+      "maximum_torso_lean": 40.0,
+      "maximum_torso_change": 32.0,
+      "chest_collapse_rise_difference": 0.09,
+      "chest_collapse_lean_change": 12.0,
+      "uncontrolled_rep_duration": 0.9,
+      "uncontrolled_descent_duration": 0.32,
+      "uncontrolled_descent_velocity": 430.0,
+      "good_probability_threshold": 0.65,
+      "bad_probability_threshold": 0.35,
+      "strong_rule_confidence": 0.8,
+      "strong_rule_severity": 0.4,
+      "minimum_feedback_rule_confidence": 0.7,
+      "minimum_feedback_rule_severity": 0.25,
+      "feedback_cooldown_seconds": 4.0
+    },
+    "documentation": {
+      "calibration_frames": {
+        "value": 20,
+        "unit": "frames",
+        "description": "Stable standing frames required. Increasing improves calibration but delays readiness."
+      },
+      "phase_confirm_frames": {
+        "value": 3,
+        "unit": "frames",
+        "description": "Consecutive frames required for a phase change. Increasing is more tolerant of jitter."
+      },
+      "bottom_confirm_frames": {
+        "value": 2,
+        "unit": "frames",
+        "description": "Consecutive bottom frames required. Increasing rejects more bounce-style reversals."
+      },
+      "ascent_confirm_frames": {
+        "value": 2,
+        "unit": "frames",
+        "description": "Consecutive rising frames required. Increasing is more tolerant of velocity jitter."
+      },
+      "measurement_smoothing_window": {
+        "value": 3,
+        "unit": "frames",
+        "description": "Median window for state and feature measurements. Increasing smooths more but adds lag."
+      },
+      "maximum_consecutive_invalid_frames": {
+        "value": 8,
+        "unit": "frames",
+        "description": "Pose-loss frames allowed mid-rep. Increasing is more tolerant of brief occlusion."
+      },
+      "return_confirm_frames": {
+        "value": 3,
+        "unit": "frames",
+        "description": "Consecutive upright frames required to finish. Increasing rejects brief false lockouts."
+      },
+      "visibility_threshold": {
+        "value": 0.55,
+        "unit": "MediaPipe confidence 0-1",
+        "description": "Minimum mean visibility across the tracked side. Increasing is stricter about tracking."
+      },
+      "core_visibility_threshold": {
+        "value": 0.35,
+        "unit": "MediaPipe confidence 0-1",
+        "description": "Minimum visibility for shoulder, hip, knee, and ankle. Heel or foot confidence alone does not reject a rep."
+      },
+      "reliable_visibility_mean": {
+        "value": 0.72,
+        "unit": "MediaPipe confidence 0-1",
+        "description": "Minimum mean visibility for scoring. Increasing is stricter about pose quality."
+      },
+      "reliable_visibility_min": {
+        "value": 0.35,
+        "unit": "MediaPipe confidence 0-1",
+        "description": "Minimum observed visibility for scoring. Increasing is stricter."
+      },
+      "minimum_valid_frame_ratio": {
+        "value": 0.85,
+        "unit": "fraction",
+        "description": "Required fraction of valid frames. Increasing is stricter."
+      },
+      "minimum_valid_frames": {
+        "value": 15,
+        "unit": "frames",
+        "description": "Minimum samples in a completed rep. Increasing rejects more short reps."
+      },
+      "maximum_side_width_ratio": {
+        "value": 0.34,
+        "unit": "shoulder/hip width divided by body scale",
+        "description": "Maximum apparent left-right width for side-on placement. Increasing is more tolerant of camera angle."
+      },
+      "side_switch_visibility_margin": {
+        "value": 0.12,
+        "unit": "MediaPipe confidence 0-1",
+        "description": "Visibility advantage needed to switch sides while idle. Increasing favors side stability."
+      },
+      "minimum_body_frame_fraction": {
+        "value": 0.42,
+        "unit": "fraction of frame height",
+        "description": "Minimum body height in frame. Increasing rejects cameras that are farther away."
+      },
+      "maximum_body_frame_fraction": {
+        "value": 0.94,
+        "unit": "fraction of frame height",
+        "description": "Maximum body height in frame. Increasing tolerates a closer camera."
+      },
+      "frame_edge_margin": {
+        "value": 0.025,
+        "unit": "normalized image coordinate",
+        "description": "Required clearance from image edges. Increasing requires more space around the body."
+      },
+      "standing_knee_min": {
+        "value": 150.0,
+        "unit": "degrees",
+        "description": "Minimum knee angle accepted during calibration. Increasing demands a straighter stance."
+      },
+      "standing_hip_min": {
+        "value": 145.0,
+        "unit": "degrees",
+        "description": "Minimum hip angle accepted during calibration. Increasing demands a straighter stance."
+      },
+      "descent_knee_delta": {
+        "value": 10.0,
+        "unit": "degrees below standing baseline",
+        "description": "Bend needed to start descent. Increasing ignores more small knee bends."
+      },
+      "descent_hip_drop": {
+        "value": 0.025,
+        "unit": "body scale",
+        "description": "Hip drop supporting descent detection. Increasing ignores more small movements."
+      },
+      "minimum_rep_rom": {
+        "value": 42.0,
+        "unit": "degrees",
+        "description": "Minimum knee range for a countable rep. Increasing rejects more partial attempts."
+      },
+      "bottom_knee_angle": {
+        "value": 122.0,
+        "unit": "degrees",
+        "description": "Knee angle that can enter BOTTOM after adequate ROM. Increasing recognizes bottom earlier."
+      },
+      "bottom_hip_drop": {
+        "value": 0.1,
+        "unit": "body scale",
+        "description": "Hip displacement that supports bottom detection. Increasing requires more descent."
+      },
+      "bottom_velocity": {
+        "value": 45.0,
+        "unit": "degrees/second",
+        "description": "Maximum absolute knee velocity near bottom. Increasing is more tolerant of no pause."
+      },
+      "ascent_velocity": {
+        "value": 12.0,
+        "unit": "degrees/second",
+        "description": "Positive knee velocity needed for ascent. Increasing is stricter."
+      },
+      "return_knee_tolerance": {
+        "value": 14.0,
+        "unit": "degrees below calibrated standing",
+        "description": "Allowed final knee flexion. Increasing is more tolerant."
+      },
+      "return_hip_tolerance": {
+        "value": 16.0,
+        "unit": "degrees below calibrated standing",
+        "description": "Allowed final hip flexion. Increasing is more tolerant."
+      },
+      "lockout_knee_delta": {
+        "value": 10.0,
+        "unit": "degrees below calibrated standing",
+        "description": "Clearly flexed final knee used for feedback. Increasing is more tolerant."
+      },
+      "lockout_hip_delta": {
+        "value": 12.0,
+        "unit": "degrees below calibrated standing",
+        "description": "Clearly flexed final hip used for feedback. Increasing is more tolerant."
+      },
+      "maximum_rep_duration": {
+        "value": 10.0,
+        "unit": "seconds",
+        "description": "Timeout for an attempt. Increasing permits slower reps."
+      },
+      "minimum_rep_duration": {
+        "value": 0.65,
+        "unit": "seconds",
+        "description": "Shortest reliably scoreable rep. Decreasing permits faster reps."
+      },
+      "shallow_knee_angle": {
+        "value": 128.0,
+        "unit": "degrees",
+        "description": "One shallow-depth signal. Decreasing makes the rule more tolerant."
+      },
+      "shallow_min_rom": {
+        "value": 55.0,
+        "unit": "degrees",
+        "description": "Second shallow-depth signal. Decreasing makes the rule more tolerant."
+      },
+      "shallow_hip_knee_margin": {
+        "value": -0.1,
+        "unit": "body scale",
+        "description": "Hip clearly above knee at bottom. Making it more negative is more tolerant."
+      },
+      "shallow_min_hip_drop": {
+        "value": 0.1,
+        "unit": "body scale",
+        "description": "Hip-drop shallow signal. Decreasing makes the rule more tolerant."
+      },
+      "heel_lift_threshold": {
+        "value": 0.045,
+        "unit": "body scale",
+        "description": "Sustained heel rise needed for feedback. Increasing is more tolerant."
+      },
+      "heel_lift_strong_threshold": {
+        "value": 0.06,
+        "unit": "body scale",
+        "description": "Large heel rise that is reportable even when the detected bottom window is brief."
+      },
+      "heel_lift_bottom_fraction": {
+        "value": 0.25,
+        "unit": "fraction of bottom-window frames",
+        "description": "Persistence required for heel feedback. Increasing is more tolerant of brief jitter."
+      },
+      "maximum_torso_lean": {
+        "value": 40.0,
+        "unit": "degrees from vertical",
+        "description": "Absolute lean signal selected conservatively from labelled data. Increasing is more tolerant."
+      },
+      "maximum_torso_change": {
+        "value": 32.0,
+        "unit": "degrees from calibrated standing",
+        "description": "Relative lean signal. Increasing is more tolerant of squat style/body proportions."
+      },
+      "chest_collapse_rise_difference": {
+        "value": 0.09,
+        "unit": "body scale",
+        "description": "Hip rise exceeding shoulder rise during ascent. Increasing is more tolerant."
+      },
+      "chest_collapse_lean_change": {
+        "value": 12.0,
+        "unit": "degrees",
+        "description": "Required forward-tip corroboration. Increasing is more tolerant."
+      },
+      "uncontrolled_rep_duration": {
+        "value": 0.9,
+        "unit": "seconds",
+        "description": "Fast-rep signal, used only with a second signal. Decreasing is more tolerant."
+      },
+      "uncontrolled_descent_duration": {
+        "value": 0.32,
+        "unit": "seconds",
+        "description": "Fast-descent signal, used only with a second signal. Decreasing is more tolerant."
+      },
+      "uncontrolled_descent_velocity": {
+        "value": 430.0,
+        "unit": "degrees/second",
+        "description": "High descent velocity signal. Increasing is more tolerant."
+      },
+      "good_probability_threshold": {
+        "value": 0.65,
+        "unit": "probability",
+        "description": "High-confidence GOOD boundary. Decreasing labels more reps good."
+      },
+      "bad_probability_threshold": {
+        "value": 0.35,
+        "unit": "probability of GOOD",
+        "description": "High-confidence BAD boundary. Decreasing requires stronger bad confidence."
+      },
+      "strong_rule_confidence": {
+        "value": 0.8,
+        "unit": "confidence 0-1",
+        "description": "Rule confidence needed to override the model quality result. Increasing is more tolerant."
+      },
+      "strong_rule_severity": {
+        "value": 0.4,
+        "unit": "severity 0-1",
+        "description": "Rule severity needed to override the model quality result. Increasing is more tolerant."
+      },
+      "minimum_feedback_rule_confidence": {
+        "value": 0.7,
+        "unit": "confidence 0-1",
+        "description": "Minimum confidence before naming a correction. Increasing suppresses more uncertain cues."
+      },
+      "minimum_feedback_rule_severity": {
+        "value": 0.25,
+        "unit": "severity 0-1",
+        "description": "Minimum severity before naming a correction. Increasing ignores more minor errors."
+      },
+      "feedback_cooldown_seconds": {
+        "value": 4.0,
+        "unit": "seconds",
+        "description": "Minimum delay before repeating the same spoken cue. Increasing reduces repetition."
+      }
+    }
+  },
+  "feedback_labels": {
+    "shallow_depth": "Try going slightly lower.",
+    "incomplete_lockout": "Stand fully between repetitions.",
+    "heel_lift": "Keep your heels grounded.",
+    "excessive_torso_lean": "Keep your chest a little more upright.",
+    "chest_collapse": "Drive your hips and chest up together.",
+    "uncontrolled_tempo": "Slow down and control the descent.",
+    "general": "Try to keep the repetition smooth and controlled."
+  },
+  "decision_policy": {
+    "confident_good": "p_good >= high_confidence_good unless a severe high-confidence rule fires",
+    "confident_bad": "p_good <= high_confidence_bad",
+    "borderline": "BAD only for a strong rule; otherwise BORDERLINE",
+    "unreliable": "UNSCORED before model inference",
+    "maximum_feedback_messages": 1
+  },
+  "feature_contract": {
+    "coordinates": "MediaPipe normalized x/y; positive y points downward",
+    "angles": "smaller 2-D joint angle in degrees",
+    "torso_lean": "absolute shoulder-to-hip inclination from vertical in degrees",
+    "distances": "normalized by calibrated shoulder-to-ankle body scale",
+    "smoothing": "MediaPipe landmark smoothing plus five-frame median measurement filtering",
+    "rep_phases": [
+      "CALIBRATING",
+      "STANDING",
+      "DESCENDING",
+      "BOTTOM",
+      "ASCENDING"
+    ]
+  },
+  "training_date": "2026-07-25T12:15:19.259077+00:00",
+  "evaluation_metrics": {
+    "accuracy": 0.8526315789473684,
+    "precision": 0.8269230769230769,
+    "recall": 0.8958333333333334,
+    "f1": 0.86,
+    "confusion_matrix": [
+      [
+        38,
+        9
+      ],
+      [
+        5,
+        43
+      ]
+    ],
+    "predicted_good_probabilities": [
+      0.955028,
+      0.07488,
+      0.98083,
+      0.817814,
+      0.566089,
+      0.720561,
+      0.063474,
+      0.72657,
+      0.712104,
+      0.15092,
+      0.594769,
+      0.159713,
+      0.153211,
+      0.248972,
+      0.232798,
+      0.679487,
+      0.688178,
+      0.700474,
+      0.766083,
+      0.651388,
+      0.668109,
+      0.752248,
+      0.203418,
+      0.291375,
+      0.126991,
+      0.561612,
+      0.768706,
+      0.700102,
+      0.217829,
+      0.231104,
+      0.197469,
+      0.694347,
+      0.681262,
+      0.660267,
+      0.331851,
+      0.21391,
+      0.076781,
+      0.762352,
+      0.674907,
+      0.195854,
+      0.143427,
+      0.741461,
+      0.208738,
+      0.235616,
+      0.233301,
+      0.179227,
+      0.196411,
+      0.185919,
+      0.184497,
+      0.714623,
+      0.769458,
+      0.643338,
+      0.692327,
+      0.678691,
+      0.535549,
+      0.546677,
+      0.063812,
+      0.320647,
+      0.578267,
+      0.464378,
+      0.722635,
+      0.281079,
+      0.55912,
+      0.402348,
+      0.651958,
+      0.533597,
+      0.688453,
+      0.787515,
+      0.032512,
+      0.484345,
+      0.843063,
+      0.013828,
+      0.584186,
+      0.36635,
+      0.714667,
+      0.712984,
+      0.751735,
+      0.07242,
+      0.690597,
+      0.804812,
+      0.301648,
+      0.390627,
+      0.331284,
+      0.779856,
+      0.15889,
+      0.618108,
+      0.605267,
+      0.018207,
+      0.769359,
+      0.124125,
+      0.53148,
+      0.138923,
+      0.605565,
+      0.204722,
+      0.803673
+    ],
+    "method": "stratified_group",
+    "folds": 3,
+    "decision_threshold": 0.5
+  },
+  "dataset_metadata": {
+    "path": "C:\\Users\\user\\OneDrive\\Desktop\\form trial\\exercises\\side_view_squat\\data\\side_squat_reps.csv",
+    "sha256": "0cdcf1fd5ab9c0fb5a540dda2b001c05b6554cc7865116b2abe44139c7aaea10",
+    "rows": 95,
+    "class_counts": {
+      "0": 47,
+      "1": 48
+    },
+    "group_count": 3,
+    "metadata_columns_present": [
+      "participant_id",
+      "session_id",
+      "recording_id",
+      "rep_number",
+      "recorded_at_utc",
+      "source",
+      "tracked_side"
+    ],
+    "reason_columns_present": [
+      "err_shallow_depth",
+      "err_incomplete_lockout",
+      "err_heel_lift",
+      "err_excessive_torso_lean",
+      "err_chest_collapse",
+      "err_uncontrolled_tempo"
+    ]
+  }
+}

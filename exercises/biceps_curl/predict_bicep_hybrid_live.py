@@ -975,7 +975,7 @@ def main():
     if MEDIAPIPE_ERROR is not None:
         raise RuntimeError(
             "This Python interpreter does not have the MediaPipe pose solutions API. "
-            "Run with the same interpreter that works for collect_data.py."
+            "Run with the same interpreter that works for collect_bicep_hybrid_data.py."
         ) from MEDIAPIPE_ERROR
 
     bundle, model, feature_columns = load_model_bundle()

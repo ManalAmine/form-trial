@@ -80,6 +80,10 @@ python exercises\side_view_squat\predict_squat_hybrid_live.py
 python exercises\side_view_squat\export_squat_onnx.py
 ```
 
+For a step-by-step, readable version of the same Random Forest workflow, open
+`train_squat_quality_model.ipynb`. The notebook imports the canonical Python
+trainer, so both entry points use the same validation and model-saving logic.
+
 Training writes `models/side_squat_hybrid_quality_v1.pkl`. It reports
 out-of-fold accuracy, precision, recall, F1, a confusion matrix, and predicted
 GOOD probabilities. Grouped cross-validation is used when the participant/session/

@@ -8,9 +8,10 @@ import onnxruntime as ort
 import pandas as pd
 
 
-DEFAULT_MODEL_FILE = "bicep_curl_model.pkl"
-DEFAULT_DATASET_FILE = "reps_dataset_v2.csv"
-DEFAULT_MODEL_DIR = Path("browser_models") / "biceps-curl" / "v1"
+ROOT_DIR = Path(__file__).resolve().parent
+DEFAULT_MODEL_FILE = ROOT_DIR / "exercises" / "biceps_curl" / "bicep_curl_hybrid_quality_model.pkl"
+DEFAULT_DATASET_FILE = ROOT_DIR / "exercises" / "biceps_curl" / "biceps_hybrid_reps_dataset.csv"
+DEFAULT_MODEL_DIR = ROOT_DIR / "browser_models" / "biceps-curl" / "v1"
 
 
 def build_parser():
@@ -102,7 +103,11 @@ def main():
         )
     )
 
-    for error_manifest in manifest["errorModels"]:
+    for error_manifest in manifest.get("errorModels", []):
+        if "error_models" not in bundle:
+            print("Hybrid quality-only bundle has no error_models; skipping error checks.")
+            break
+
         if error_manifest.get("type") == "constant":
             print(
                 f"{error_manifest['key']}: skipped ONNX check "

@@ -62,7 +62,8 @@ def build_model() -> RandomForestClassifier:
     )
 
 
-def _load_dataset(path: Path) -> pd.DataFrame:
+def load_dataset(path: Path) -> pd.DataFrame:
+    """Load the squat dataset and validate the training columns and labels."""
     if not path.exists():
         raise FileNotFoundError(f"Dataset not found: {path}. Collect and label squat reps first.")
     frame = pd.read_csv(path)
@@ -79,7 +80,8 @@ def _load_dataset(path: Path) -> pd.DataFrame:
     return frame
 
 
-def _recording_groups(frame: pd.DataFrame) -> np.ndarray | None:
+def recording_groups(frame: pd.DataFrame) -> np.ndarray | None:
+    """Build group IDs that keep related recordings in the same CV fold."""
     columns = [name for name in ("participant_id", "session_id", "recording_id") if name in frame]
     if not columns:
         return None
@@ -90,7 +92,8 @@ def _recording_groups(frame: pd.DataFrame) -> np.ndarray | None:
     return groups
 
 
-def _cv_strategy(y: pd.Series, groups: np.ndarray | None):
+def cv_strategy(y: pd.Series, groups: np.ndarray | None):
+    """Choose grouped CV when possible, otherwise use rep-level stratification."""
     class_counts = y.value_counts()
     if int(class_counts.min()) < 2:
         raise ValueError("Each class needs at least two repetitions for cross-validation.")
@@ -104,7 +107,8 @@ def _cv_strategy(y: pd.Series, groups: np.ndarray | None):
     return StratifiedKFold(n_splits=splits, shuffle=True, random_state=RANDOM_STATE), None, "stratified_rep"
 
 
-def _metrics(y_true, probabilities) -> dict:
+def calculate_metrics(y_true, probabilities) -> dict:
+    """Calculate binary quality metrics from GOOD-class probabilities."""
     predictions = (np.asarray(probabilities) >= 0.5).astype(int)
     precision, recall, f1, _ = precision_recall_fscore_support(
         y_true, predictions, average="binary", zero_division=0
@@ -120,7 +124,7 @@ def _metrics(y_true, probabilities) -> dict:
 
 
 def train(dataset_path: Path, model_path: Path) -> dict:
-    frame = _load_dataset(dataset_path)
+    frame = load_dataset(dataset_path)
     if len(frame) < 150:
         print(
             f"WARNING: only {len(frame)} labelled repetitions are available. "
@@ -128,15 +132,15 @@ def train(dataset_path: Path, model_path: Path) -> dict:
         )
     X = frame[FEATURE_COLUMNS].astype(float)
     y = frame[TARGET_COLUMN]
-    groups = _recording_groups(frame)
-    cv, cv_groups, split_name = _cv_strategy(y, groups)
+    groups = recording_groups(frame)
+    cv, cv_groups, split_name = cv_strategy(y, groups)
     if split_name != "stratified_group":
         print("WARNING: usable participant/session/recording groups were not available; rep-level CV may be optimistic.")
 
     probabilities = cross_val_predict(
         build_model(), X, y, cv=cv, groups=cv_groups, method="predict_proba", n_jobs=-1
     )[:, list(sorted(y.unique())).index(1)]
-    evaluation = _metrics(y, probabilities)
+    evaluation = calculate_metrics(y, probabilities)
     evaluation.update({"method": split_name, "folds": cv.get_n_splits(), "decision_threshold": 0.5})
     print("Out-of-fold evaluation (not training accuracy):")
     print(f"  accuracy={evaluation['accuracy']:.3f} precision={evaluation['precision']:.3f} recall={evaluation['recall']:.3f} f1={evaluation['f1']:.3f}")

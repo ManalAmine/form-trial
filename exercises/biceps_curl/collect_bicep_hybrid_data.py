@@ -13,40 +13,18 @@ except AttributeError:
     from mediapipe.python.solutions import drawing_utils as mp_drawing
     from mediapipe.python.solutions import pose as mp_pose
 
-WINDOW_NAME = "Collect Bicep Curl Data (V2)"
-DATASET_FILE = "reps_dataset_v2.csv"
-DOWN_THRESHOLD = 160
-UP_THRESHOLD = 30
-PARTIAL_THRESHOLD = 95
-RETURN_THRESHOLD = 125
+WINDOW_NAME = "Collect Bicep Curl Hybrid Data"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_FILE = os.getenv(
+    "DATASET_FILE",
+    os.path.join(SCRIPT_DIR, "biceps_hybrid_reps_dataset.csv"),
+)
 
-ACTIVE_ERROR_KEYS = {
-    ord("1"): "err_partial_rom",
-    ord("2"): "err_too_fast",
-    ord("3"): "err_torso_sway",
-    ord("4"): "err_asymmetry",
-}
-ERROR_DISPLAY = {
-    "err_partial_rom": "partial",
-    "err_too_fast": "fast",
-    "err_torso_sway": "torso",
-    "err_asymmetry": "asymmetry",
-    "err_elbow_drift": "elbow",
-    "err_shoulder_swing": "shoulder",
-    "err_wrist_compensation": "wrist",
-    "err_control_loss": "control",
-}
-ERROR_COLUMNS = [
-    "err_partial_rom",
-    "err_too_fast",
-    "err_torso_sway",
-    "err_elbow_drift",
-    "err_asymmetry",
-    "err_shoulder_swing",
-    "err_wrist_compensation",
-    "err_control_loss",
-]
-ACTIVE_ERROR_COLUMNS = list(ACTIVE_ERROR_KEYS.values())
+DOWN_THRESHOLD = 160
+START_MOVEMENT_THRESHOLD = 150
+MIN_CURL_BEND_THRESHOLD = 130
+FULL_CURL_TOP_THRESHOLD = 65
+RETURN_THRESHOLD = 150
 
 FEATURE_COLUMNS = [
     "min_left_angle",
@@ -70,7 +48,7 @@ FEATURE_COLUMNS = [
     "pose_visibility_min",
     "tracking_lost_ratio",
 ]
-CSV_COLUMNS = FEATURE_COLUMNS + ERROR_COLUMNS + ["is_good"]
+CSV_COLUMNS = FEATURE_COLUMNS + ["is_good"]
 
 
 def calculate_angle(a, b, c):
@@ -117,53 +95,21 @@ def compute_peak_velocity(angles, timestamps):
 
 
 def ensure_csv_exists(filename):
-    if not os.path.exists(filename):
-        with open(filename, mode="w", newline="") as file_handle:
-            writer = csv.writer(file_handle)
-            writer.writerow(CSV_COLUMNS)
+    if os.path.exists(filename):
         return
 
-    with open(filename, mode="r", newline="") as file_handle:
-        reader = csv.reader(file_handle)
-        existing_header = next(reader, [])
-
-    if existing_header == CSV_COLUMNS:
-        return
-
-    backup_filename = f"{filename}.backup_{int(time.time())}"
-    os.replace(filename, backup_filename)
-
-    with open(backup_filename, mode="r", newline="") as old_file, open(
-        filename, mode="w", newline=""
-    ) as new_file:
-        reader = csv.DictReader(old_file)
-        writer = csv.DictWriter(new_file, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-
-        for row in reader:
-            migrated_row = {}
-            for column in CSV_COLUMNS:
-                value = row.get(column, "")
-                if value != "":
-                    migrated_row[column] = value
-                    continue
-
-                if column in FEATURE_COLUMNS:
-                    migrated_row[column] = 0
-                elif column in ERROR_COLUMNS:
-                    migrated_row[column] = 0
-                elif column == "is_good":
-                    if row.get("label", "").strip().lower() == "good":
-                        migrated_row[column] = 1
-                    else:
-                        migrated_row[column] = 0
-            writer.writerow(migrated_row)
-
-
-def save_row(filename, row):
-    with open(filename, mode="a", newline="") as file_handle:
+    with open(filename, mode="w", newline="") as file_handle:
         writer = csv.writer(file_handle)
-        writer.writerow(row)
+        writer.writerow(CSV_COLUMNS)
+
+
+def save_row(filename, feature_row, is_good):
+    output_row = dict(feature_row)
+    output_row["is_good"] = int(is_good)
+
+    with open(filename, mode="a", newline="") as file_handle:
+        writer = csv.DictWriter(file_handle, fieldnames=CSV_COLUMNS)
+        writer.writerow(output_row)
 
 
 def build_rep_features(
@@ -178,7 +124,7 @@ def build_rep_features(
     rep_total_frames,
     rep_lost_frames,
 ):
-    rep_duration = max(time.time() - rep_start_time, 0.0)
+    rep_duration = max(timestamps[-1] - timestamps[0], 0.0) if len(timestamps) >= 2 else 0.0
     left_min = float(min(left_angles))
     left_max = float(max(left_angles))
     right_min = float(min(right_angles))
@@ -254,31 +200,8 @@ def draw_angle(image, angle, joint, frame_width, frame_height):
     )
 
 
-def format_selected_errors(selected_errors):
-    if not selected_errors:
-        return "Selected errors: none (good)"
-
-    ordered_labels = [
-        ERROR_DISPLAY[column]
-        for column in ACTIVE_ERROR_COLUMNS
-        if column in selected_errors
-    ]
-    selected_text = ", ".join(ordered_labels)
-    if len(selected_text) > 55:
-        selected_text = f"{selected_text[:52]}..."
-    return f"Selected errors: {selected_text}"
-
-
-def draw_overlay(
-    image,
-    counter,
-    stage,
-    last_saved_message,
-    status_message,
-    selected_errors_message,
-):
-    cv2.rectangle(image, (0, 0), (900, 170), (255, 145, 238), -1)
-
+def draw_overlay(image, counter, stage, status_message, last_saved_message):
+    cv2.rectangle(image, (0, 0), (920, 136), (255, 145, 238), -1)
     cv2.putText(
         image,
         "REPS",
@@ -312,17 +235,7 @@ def draw_overlay(
     cv2.putText(
         image,
         status_message,
-        (130, 56),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.52,
-        (0, 0, 0),
-        1,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        image,
-        selected_errors_message,
-        (130, 82),
+        (130, 58),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.52,
         (0, 0, 0),
@@ -332,7 +245,7 @@ def draw_overlay(
     cv2.putText(
         image,
         last_saved_message,
-        (130, 106),
+        (130, 86),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.5,
         (0, 0, 0),
@@ -341,36 +254,47 @@ def draw_overlay(
     )
     cv2.putText(
         image,
-        "Toggle errors: 1-4 | C=clear selected | S=save rep | Q=quit",
-        (130, 136),
+        "After a rep: G=save good | B=save bad | D=discard | Q=quit",
+        (130, 116),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.47,
-        (40, 40, 40),
-        1,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        image,
-        "1=partial (up/down ROM) 2=fast 3=torso 4=asym | paused: elbow, shoulder, wrist, control",
-        (130, 158),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.41,
+        0.48,
         (40, 40, 40),
         1,
         cv2.LINE_AA,
     )
 
 
-def build_output_row(feature_row, selected_errors):
-    is_good = 1 if not selected_errors else 0
+def append_rep_sample(rep_state, sample, sample_time=None):
+    timestamp = sample["frame_time"] if sample_time is None else sample_time
 
-    full_row = dict(feature_row)
-    full_row["is_good"] = is_good
+    rep_state["rep_total_frames"] += 1
+    rep_state["left_angles_rep"].append(sample["left_angle"])
+    rep_state["right_angles_rep"].append(sample["right_angle"])
+    rep_state["timestamps_rep"].append(timestamp)
+    rep_state["torso_lean_rep"].append(sample["torso_lean"])
+    rep_state["left_elbow_x_rep"].append(sample["left_elbow_x"])
+    rep_state["right_elbow_x_rep"].append(sample["right_elbow_x"])
+    rep_state["visibility_rep"].append(sample["visibility_mean"])
 
-    for error_column in ERROR_COLUMNS:
-        full_row[error_column] = 1 if error_column in selected_errors else 0
 
-    return [full_row[column] for column in CSV_COLUMNS], is_good
+def reset_rep_state():
+    return {
+        "rep_ready": False,
+        "rep_active": False,
+        "rep_start_time": None,
+        "ready_sample": None,
+        "left_angles_rep": [],
+        "right_angles_rep": [],
+        "timestamps_rep": [],
+        "torso_lean_rep": [],
+        "left_elbow_x_rep": [],
+        "right_elbow_x_rep": [],
+        "visibility_rep": [],
+        "rep_total_frames": 0,
+        "rep_lost_frames": 0,
+        "rep_reached_partial": False,
+        "rep_reached_full": False,
+    }
 
 
 def main():
@@ -384,21 +308,8 @@ def main():
     stage = "waiting"
     last_saved_message = f"Dataset ready: {DATASET_FILE}"
     status_message = "Move into frame with both arms visible."
-
-    rep_active = False
-    rep_start_time = None
-    left_angles_rep = []
-    right_angles_rep = []
-    timestamps_rep = []
-    torso_lean_rep = []
-    left_elbow_x_rep = []
-    right_elbow_x_rep = []
-    visibility_rep = []
-    rep_total_frames = 0
-    rep_lost_frames = 0
-    rep_reached_partial = False
-    rep_reached_full = False
     pending_rep = None
+    rep_state = reset_rep_state()
 
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
         while cap.isOpened():
@@ -482,102 +393,96 @@ def main():
                 draw_angle(image, right_angle, right_elbow, frame_width, frame_height)
 
                 arms_down = left_angle > DOWN_THRESHOLD and right_angle > DOWN_THRESHOLD
-                arms_up = left_angle < UP_THRESHOLD and right_angle < UP_THRESHOLD
+                movement_started = (
+                    left_angle < START_MOVEMENT_THRESHOLD
+                    and right_angle < START_MOVEMENT_THRESHOLD
+                )
+                reached_min_bend = (
+                    left_angle < MIN_CURL_BEND_THRESHOLD
+                    and right_angle < MIN_CURL_BEND_THRESHOLD
+                )
+                reached_full_top = (
+                    left_angle < FULL_CURL_TOP_THRESHOLD
+                    and right_angle < FULL_CURL_TOP_THRESHOLD
+                )
+                current_sample = {
+                    "frame_time": frame_time,
+                    "left_angle": left_angle,
+                    "right_angle": right_angle,
+                    "torso_lean": torso_lean,
+                    "left_elbow_x": left_elbow[0],
+                    "right_elbow_x": right_elbow[0],
+                    "visibility_mean": visibility_mean,
+                }
 
                 if pending_rep is None:
-                    if arms_down and not rep_active:
-                        rep_active = True
-                        rep_start_time = frame_time
-                        left_angles_rep = []
-                        right_angles_rep = []
-                        timestamps_rep = []
-                        torso_lean_rep = []
-                        left_elbow_x_rep = []
-                        right_elbow_x_rep = []
-                        visibility_rep = []
-                        rep_total_frames = 0
-                        rep_lost_frames = 0
-                        rep_reached_partial = False
-                        rep_reached_full = False
+                    if arms_down and not rep_state["rep_active"]:
+                        if not rep_state["rep_ready"]:
+                            rep_state = reset_rep_state()
+                        rep_state["rep_ready"] = True
+                        rep_state["ready_sample"] = current_sample
+                        stage = "ready"
+                        status_message = "Ready. Start curling to begin the rep timer."
+
+                    if (
+                        rep_state["rep_ready"]
+                        and not rep_state["rep_active"]
+                        and movement_started
+                    ):
+                        ready_sample = rep_state.get("ready_sample")
+                        rep_state["rep_active"] = True
+                        rep_state["rep_start_time"] = frame_time
                         stage = "down"
-                        status_message = (
-                            "Rep started. Curl up fully or halfway, then return down."
-                        )
-
-                    if rep_active:
-                        rep_total_frames += 1
-                        left_angles_rep.append(left_angle)
-                        right_angles_rep.append(right_angle)
-                        timestamps_rep.append(frame_time)
-                        torso_lean_rep.append(torso_lean)
-                        left_elbow_x_rep.append(left_elbow[0])
-                        right_elbow_x_rep.append(right_elbow[0])
-                        visibility_rep.append(visibility_mean)
-
-                        if (
-                            left_angle < PARTIAL_THRESHOLD
-                            and right_angle < PARTIAL_THRESHOLD
-                            and not rep_reached_partial
-                        ):
-                            rep_reached_partial = True
-                            stage = "partial"
-                            status_message = (
-                                "Partial range reached. Return down to finish the rep."
+                        status_message = "Rep started. Curl up, then return down."
+                        if ready_sample is not None:
+                            append_rep_sample(
+                                rep_state,
+                                ready_sample,
+                                sample_time=frame_time,
                             )
 
-                        if arms_up and not rep_reached_full:
-                            rep_reached_full = True
+                    if rep_state["rep_active"]:
+                        append_rep_sample(rep_state, current_sample)
+
+                        if (
+                            reached_min_bend
+                            and not rep_state["rep_reached_partial"]
+                        ):
+                            rep_state["rep_reached_partial"] = True
+                            stage = "partial"
+                            status_message = "Curl bend reached. Return down or curl higher."
+
+                        if reached_full_top and not rep_state["rep_reached_full"]:
+                            rep_state["rep_reached_full"] = True
                             stage = "up"
-                            status_message = "Top reached. Lower both arms to finish the rep."
+                            status_message = "Top reached. Lower both arms."
 
                         if (
                             left_angle > RETURN_THRESHOLD
                             and right_angle > RETURN_THRESHOLD
-                            and rep_reached_partial
+                            and rep_state["rep_reached_partial"]
                         ):
                             counter += 1
-
-                            features = build_rep_features(
-                                left_angles_rep,
-                                right_angles_rep,
-                                timestamps_rep,
-                                torso_lean_rep,
-                                left_elbow_x_rep,
-                                right_elbow_x_rep,
-                                visibility_rep,
-                                rep_start_time,
-                                rep_total_frames,
-                                rep_lost_frames,
-                            )
-
                             pending_rep = {
                                 "rep_number": counter,
-                                "feature_row": features,
-                                "selected_errors": set(),
+                                "feature_row": build_rep_features(
+                                    rep_state["left_angles_rep"],
+                                    rep_state["right_angles_rep"],
+                                    rep_state["timestamps_rep"],
+                                    rep_state["torso_lean_rep"],
+                                    rep_state["left_elbow_x_rep"],
+                                    rep_state["right_elbow_x_rep"],
+                                    rep_state["visibility_rep"],
+                                    rep_state["rep_start_time"],
+                                    rep_state["rep_total_frames"],
+                                    rep_state["rep_lost_frames"],
+                                ),
                             }
-
-                            rep_active = False
-                            rep_start_time = None
-                            left_angles_rep = []
-                            right_angles_rep = []
-                            timestamps_rep = []
-                            torso_lean_rep = []
-                            left_elbow_x_rep = []
-                            right_elbow_x_rep = []
-                            visibility_rep = []
-                            rep_total_frames = 0
-                            rep_lost_frames = 0
-                            rep_reached_partial = False
-                            rep_reached_full = False
-                            stage = "awaiting labels"
-                            status_message = (
-                                f"Rep {counter} done. Toggle 1-4, then S (no errors = good)."
-                            )
+                            rep_state = reset_rep_state()
+                            stage = "awaiting label"
+                            status_message = f"Rep {counter} done. Press G good, B bad, or D discard."
                 else:
-                    stage = "awaiting labels"
-                    status_message = (
-                        f"Rep {pending_rep['rep_number']} waiting. S saves good if none selected."
-                    )
+                    stage = "awaiting label"
 
                 mp_drawing.draw_landmarks(
                     image,
@@ -592,30 +497,18 @@ def main():
                 )
             else:
                 if pending_rep is None:
-                    if rep_active:
-                        rep_total_frames += 1
-                        rep_lost_frames += 1
-                        status_message = (
-                            "Pose lost mid-rep. Step back so both arms are visible."
-                        )
+                    if rep_state["rep_active"]:
+                        rep_state["rep_total_frames"] += 1
+                        rep_state["rep_lost_frames"] += 1
+                        status_message = "Pose lost mid-rep. Step back into frame."
+                    elif rep_state["rep_ready"]:
+                        stage = "ready"
+                        status_message = "Ready. Start curling to begin the rep timer."
                     else:
                         stage = "searching"
                         status_message = "Move into frame so tracking can start."
 
-            selected_errors_message = (
-                format_selected_errors(pending_rep["selected_errors"])
-                if pending_rep is not None
-                else "Selected errors: --"
-            )
-
-            draw_overlay(
-                image,
-                counter,
-                stage,
-                last_saved_message,
-                status_message,
-                selected_errors_message,
-            )
+            draw_overlay(image, counter, stage, status_message, last_saved_message)
             cv2.imshow(WINDOW_NAME, image)
 
             key = cv2.waitKey(10) & 0xFF
@@ -623,43 +516,23 @@ def main():
                 break
 
             if pending_rep is not None:
-                if key in ACTIVE_ERROR_KEYS:
-                    selected_column = ACTIVE_ERROR_KEYS[key]
-                    if selected_column in pending_rep["selected_errors"]:
-                        pending_rep["selected_errors"].remove(selected_column)
-                    else:
-                        pending_rep["selected_errors"].add(selected_column)
-                elif key == ord("c"):
-                    pending_rep["selected_errors"].clear()
-                    status_message = "Error selection cleared."
-                elif key == ord("s"):
-                    row, is_good = build_output_row(
-                        pending_rep["feature_row"],
-                        pending_rep["selected_errors"],
-                    )
-                    save_row(DATASET_FILE, row)
-                    saved_reasons = (
-                        ", ".join(
-                            [
-                                ERROR_DISPLAY[column]
-                                for column in ERROR_COLUMNS
-                                if column in pending_rep["selected_errors"]
-                            ]
-                        )
-                        if pending_rep["selected_errors"]
-                        else "none"
-                    )
-                    saved_label = "good" if is_good == 1 else "bad"
-                    last_saved_message = (
-                        f"Saved rep {pending_rep['rep_number']} as {saved_label} (is_good={is_good}, reasons={saved_reasons})."
-                    )
+                if key == ord("g"):
+                    save_row(DATASET_FILE, pending_rep["feature_row"], is_good=1)
+                    last_saved_message = f"Saved rep {pending_rep['rep_number']} as GOOD."
                     status_message = last_saved_message
                     pending_rep = None
                     stage = "ready"
-                elif key not in (255,):
-                    status_message = (
-                        "Use 1-4 to toggle errors, C to clear selected, or S to save."
-                    )
+                elif key == ord("b"):
+                    save_row(DATASET_FILE, pending_rep["feature_row"], is_good=0)
+                    last_saved_message = f"Saved rep {pending_rep['rep_number']} as BAD."
+                    status_message = last_saved_message
+                    pending_rep = None
+                    stage = "ready"
+                elif key == ord("d"):
+                    last_saved_message = f"Discarded rep {pending_rep['rep_number']}."
+                    status_message = last_saved_message
+                    pending_rep = None
+                    stage = "ready"
 
     cap.release()
     cv2.destroyAllWindows()
