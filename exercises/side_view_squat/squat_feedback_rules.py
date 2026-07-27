@@ -84,16 +84,26 @@ def evaluate_rules(
                 {"final_knee_delta": knee_delta, "final_hip_delta": hip_delta},
             ))
 
+    heel_lift = float(features["heel_lift_max"])
+    heel_fraction = float(features["heel_lift_bottom_fraction"])
+    moderate_persistent_lift = (
+        heel_lift >= t["heel_lift_threshold"]
+        and heel_fraction >= t["heel_lift_bottom_fraction"]
+    )
+    strong_lift = heel_lift >= t["heel_lift_strong_threshold"]
     if (
-        features["heel_lift_max"] >= t["heel_lift_threshold"]
-        and features["heel_lift_bottom_fraction"] >= t["heel_lift_bottom_fraction"]
+        (moderate_persistent_lift or strong_lift)
         and features["pose_visibility_min"] >= t["reliable_visibility_min"]
     ):
+        magnitude_strength = _clamp(
+            (heel_lift - t["heel_lift_threshold"])
+            / max(t["heel_lift_strong_threshold"] - t["heel_lift_threshold"], 1e-6)
+        )
         results.append(RuleResult(
             "heel_lift", FEEDBACK["heel_lift"],
-            _clamp((features["heel_lift_max"] - t["heel_lift_threshold"]) / 0.08 + 0.45),
-            _clamp((0.72 + 0.25 * features["heel_lift_bottom_fraction"]) * reliability),
-            {"heel_lift_max": features["heel_lift_max"], "bottom_fraction": features["heel_lift_bottom_fraction"]},
+            _clamp((heel_lift - t["heel_lift_threshold"]) / 0.08 + 0.45),
+            _clamp((0.80 + 0.18 * max(heel_fraction, magnitude_strength)) * reliability),
+            {"heel_lift_max": heel_lift, "bottom_fraction": heel_fraction},
         ))
 
     torso_change = features["max_torso_lean"] - features["standing_torso_lean"]

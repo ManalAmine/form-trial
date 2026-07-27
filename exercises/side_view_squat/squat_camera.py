@@ -30,6 +30,7 @@ LANDMARK_INDEX = {
     "right_foot": 32,
 }
 SIDE_PARTS = ("shoulder", "hip", "knee", "ankle", "heel", "foot")
+CORE_TRACKING_PARTS = ("shoulder", "hip", "knee", "ankle")
 
 
 @dataclass(frozen=True)
@@ -102,24 +103,45 @@ def assess_camera(
     timestamp: float,
     preferred_side: str | None = None,
     thresholds: dict[str, float] | None = None,
+    enforce_body_size: bool = True,
 ) -> CameraAssessment:
+    """Validate pose visibility and camera placement for one frame.
+
+    Body-height framing is posture-dependent: a deep squat is naturally much
+    shorter in the image than the calibrated standing pose. Callers disable
+    that check after a repetition starts while retaining visibility, edge, and
+    side-view validation.
+    """
     thresholds = thresholds or SQUAT_THRESHOLDS
     if landmarks is None:
         return CameraAssessment(False, "Move so your full body is visible.", None, None)
 
     named = landmarks_to_named(landmarks)
-    # Once a rep starts, preferred_side is locked by the tracker. If it becomes
-    # occluded, reject the frame instead of silently changing body sides.
-    side = preferred_side if preferred_side in {"left", "right"} else choose_visible_side(
+    # Favor the side already used by the tracker, but fall back when the other
+    # side becomes substantially more visible. Squat features are side-agnostic,
+    # so a stable fallback is safer than dropping an otherwise clear frame.
+    side = choose_visible_side(
         named,
+        preferred_side=preferred_side,
         switch_margin=thresholds["side_switch_visibility_margin"],
     )
     measurement = build_measurement(named, side, timestamp)
     required = [named[f"{side}_{part}"] for part in SIDE_PARTS]
-    minimum_visibility = min(visibility(point) for point in required)
-    if minimum_visibility < thresholds["visibility_threshold"]:
+    mean_visibility = float(np.mean([visibility(point) for point in required]))
+    core_visibility = min(
+        visibility(named[f"{side}_{part}"]) for part in CORE_TRACKING_PARTS
+    )
+    if (
+        mean_visibility < thresholds["visibility_threshold"]
+        or core_visibility < thresholds["core_visibility_threshold"]
+    ):
         measurement["valid"] = False
-        return CameraAssessment(False, "Improve the lighting and keep your full side visible.", side, measurement)
+        return CameraAssessment(
+            False,
+            "Keep your shoulder, hip, knee, and ankle visible.",
+            side,
+            measurement,
+        )
 
     all_points = [named[name] for name in LANDMARK_INDEX]
     xs = [float(point.x) for point in all_points]
@@ -129,13 +151,14 @@ def assess_camera(
         measurement["valid"] = False
         return CameraAssessment(False, "Make sure your feet and shoulders are inside the frame.", side, measurement)
 
-    body_fraction = max(ys) - min(ys)
-    if body_fraction < thresholds["minimum_body_frame_fraction"]:
-        measurement["valid"] = False
-        return CameraAssessment(False, "Move closer while keeping your full body visible.", side, measurement)
-    if body_fraction > thresholds["maximum_body_frame_fraction"]:
-        measurement["valid"] = False
-        return CameraAssessment(False, "Move back so your full body is visible.", side, measurement)
+    if enforce_body_size:
+        body_fraction = max(ys) - min(ys)
+        if body_fraction < thresholds["minimum_body_frame_fraction"]:
+            measurement["valid"] = False
+            return CameraAssessment(False, "Move closer while keeping your full body visible.", side, measurement)
+        if body_fraction > thresholds["maximum_body_frame_fraction"]:
+            measurement["valid"] = False
+            return CameraAssessment(False, "Move back so your full body is visible.", side, measurement)
 
     shoulder_width = abs(float(named["left_shoulder"].x) - float(named["right_shoulder"].x))
     hip_width = abs(float(named["left_hip"].x) - float(named["right_hip"].x))

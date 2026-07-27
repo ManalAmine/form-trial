@@ -311,6 +311,7 @@ def run(args) -> None:
                 results.pose_landmarks.landmark if results.pose_landmarks else None,
                 now,
                 preferred_side=tracker.locked_side,
+                enforce_body_size=not tracker.active,
             )
             camera_text = assessment.guidance
             if pending is None:

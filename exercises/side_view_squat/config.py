@@ -95,7 +95,7 @@ THRESHOLD_SPECS = {
         "description": "Consecutive rising frames required. Increasing is more tolerant of velocity jitter.",
     },
     "measurement_smoothing_window": {
-        "value": 5,
+        "value": 3,
         "unit": "frames",
         "description": "Median window for state and feature measurements. Increasing smooths more but adds lag.",
     },
@@ -105,14 +105,19 @@ THRESHOLD_SPECS = {
         "description": "Pose-loss frames allowed mid-rep. Increasing is more tolerant of brief occlusion.",
     },
     "return_confirm_frames": {
-        "value": 4,
+        "value": 3,
         "unit": "frames",
         "description": "Consecutive upright frames required to finish. Increasing rejects brief false lockouts.",
     },
     "visibility_threshold": {
         "value": 0.55,
         "unit": "MediaPipe confidence 0-1",
-        "description": "Minimum visibility per required landmark. Increasing is stricter about tracking.",
+        "description": "Minimum mean visibility across the tracked side. Increasing is stricter about tracking.",
+    },
+    "core_visibility_threshold": {
+        "value": 0.35,
+        "unit": "MediaPipe confidence 0-1",
+        "description": "Minimum visibility for shoulder, hip, knee, and ankle. Heel or foot confidence alone does not reject a rep.",
     },
     "reliable_visibility_mean": {
         "value": 0.72,
@@ -259,15 +264,20 @@ THRESHOLD_SPECS = {
         "unit": "body scale",
         "description": "Sustained heel rise needed for feedback. Increasing is more tolerant.",
     },
+    "heel_lift_strong_threshold": {
+        "value": 0.060,
+        "unit": "body scale",
+        "description": "Large heel rise that is reportable even when the detected bottom window is brief.",
+    },
     "heel_lift_bottom_fraction": {
-        "value": 0.50,
+        "value": 0.25,
         "unit": "fraction of bottom-window frames",
         "description": "Persistence required for heel feedback. Increasing is more tolerant of brief jitter.",
     },
     "maximum_torso_lean": {
-        "value": 58.0,
+        "value": 40.0,
         "unit": "degrees from vertical",
-        "description": "Absolute lean signal. Increasing is more tolerant.",
+        "description": "Absolute lean signal selected conservatively from labelled data. Increasing is more tolerant.",
     },
     "maximum_torso_change": {
         "value": 32.0,
@@ -310,14 +320,14 @@ THRESHOLD_SPECS = {
         "description": "High-confidence BAD boundary. Decreasing requires stronger bad confidence.",
     },
     "strong_rule_confidence": {
-        "value": 0.85,
+        "value": 0.80,
         "unit": "confidence 0-1",
-        "description": "Rule confidence needed to override a borderline model result. Increasing is more tolerant.",
+        "description": "Rule confidence needed to override the model quality result. Increasing is more tolerant.",
     },
     "strong_rule_severity": {
-        "value": 0.45,
+        "value": 0.40,
         "unit": "severity 0-1",
-        "description": "Severity needed for a borderline override. Increasing is more tolerant.",
+        "description": "Rule severity needed to override the model quality result. Increasing is more tolerant.",
     },
     "minimum_feedback_rule_confidence": {
         "value": 0.70,

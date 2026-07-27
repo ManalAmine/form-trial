@@ -61,34 +61,45 @@ def assess_completed_rep(
     probability = predict_good_probability(model, feature_row)
     rules = evaluate_rules(feature_row, frames, baseline, t)
     strongest = primary_rule(rules)
-    strong_rule = (
-        strongest is not None
-        and strongest.confidence >= t["strong_rule_confidence"]
-        and strongest.severity >= t["strong_rule_severity"]
-    )
+    override_rule = primary_rule([
+        rule
+        for rule in rules
+        if rule.confidence >= t["strong_rule_confidence"]
+        and rule.severity >= t["strong_rule_severity"]
+    ])
+    strong_rule = override_rule is not None
+    feedback_rule = override_rule if override_rule is not None else strongest
     reportable_rule = (
-        strongest is not None
-        and strongest.confidence >= t["minimum_feedback_rule_confidence"]
-        and strongest.severity >= t["minimum_feedback_rule_severity"]
+        feedback_rule is not None
+        and feedback_rule.confidence >= t["minimum_feedback_rule_confidence"]
+        and feedback_rule.severity >= t["minimum_feedback_rule_severity"]
     )
 
-    if probability >= t["good_probability_threshold"]:
+    # A severe, reliable biomechanics rule takes precedence over the learned
+    # quality score. This matches the browser/export decision contract and
+    # prevents an obvious form error from being labelled GOOD merely because
+    # the small training set produced an optimistic probability.
+    if strong_rule:
+        quality, reason = "BAD", "strong_rule_override"
+    elif probability >= t["good_probability_threshold"]:
         quality, reason = "GOOD", "model_confident_good"
     elif probability <= t["bad_probability_threshold"]:
         quality, reason = "BAD", "model_confident_bad"
-    elif strong_rule:
-        quality, reason = "BAD", "strong_rule_override"
     else:
         quality, reason = "BORDERLINE", "borderline_model_no_strong_rule"
 
     if quality == "GOOD":
         feedback, error, confidence = "Good rep.", None, 0.0
     elif quality == "BAD" and reportable_rule:
-        feedback, error, confidence = strongest.feedback, strongest.name, strongest.confidence
+        feedback, error, confidence = (
+            feedback_rule.feedback,
+            feedback_rule.name,
+            feedback_rule.confidence,
+        )
     elif quality == "BAD":
         feedback, error, confidence = FEEDBACK["general"], "general", 0.0
     else:
-        feedback, error, confidence = "Rep counted; no strong correction.", None, 0.0
+        feedback, error, confidence = "Rep counted, but form quality was uncertain.", None, 0.0
 
     return {
         "rep_number": rep_number,

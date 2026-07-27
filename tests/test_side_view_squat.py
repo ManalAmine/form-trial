@@ -19,6 +19,7 @@ from exercises.side_view_squat.squat_geometry import calculate_angle
 from exercises.side_view_squat.squat_hybrid import assess_completed_rep
 from exercises.side_view_squat.squat_rep_tracker import SquatRepTracker
 from exercises.side_view_squat.export_squat_onnx import export
+from exercises.side_view_squat.predict_squat_hybrid_live import FeedbackSpeaker, _fit_for_display
 
 
 def frame(timestamp, knee, hip_y, phase="DESCENDING", hip=160.0, torso=12.0, visibility=0.95):
@@ -81,6 +82,54 @@ class ConstantModel:
         return np.asarray([[1.0 - self.probability, self.probability] for _ in values])
 
 
+class FakeSpeechInput:
+    def __init__(self):
+        self.writes = []
+
+    def write(self, text):
+        self.writes.append(text)
+
+    def flush(self):
+        pass
+
+
+class FakeSpeechProcess:
+    def __init__(self):
+        self.stdin = FakeSpeechInput()
+
+    def poll(self):
+        return None
+
+
+def fake_speaker(cooldown=4.0):
+    speaker = FeedbackSpeaker(enabled=False, cooldown=cooldown)
+    speaker.enabled = True
+    speaker.process = FakeSpeechProcess()
+    return speaker
+
+
+def test_completed_rep_speech_does_not_drop_repeated_good_feedback():
+    speaker = fake_speaker()
+
+    first_queued = speaker.speak("Good rep.", deduplicate=False)
+    second_queued = speaker.speak("Good rep.", deduplicate=False)
+
+    assert first_queued
+    assert second_queued
+    assert speaker.process.stdin.writes == ["Good rep.\n", "Good rep.\n"]
+
+
+def test_speech_deduplication_remains_available_for_repeated_frame_feedback():
+    speaker = fake_speaker()
+
+    first_queued = speaker.speak("Keep your heels grounded.")
+    second_queued = speaker.speak("Keep your heels grounded.")
+
+    assert first_queued
+    assert not second_queued
+    assert speaker.process.stdin.writes == ["Keep your heels grounded.\n"]
+
+
 def test_angle_calculation():
     assert calculate_angle((1, 0), (0, 0), (0, 1)) == pytest.approx(90.0)
     assert calculate_angle((-1, 0), (0, 0), (1, 0)) == pytest.approx(180.0)
@@ -101,11 +150,92 @@ def test_camera_rejects_low_visibility():
         point = landmarks[index]
         point.x = 0.48 if name.startswith("left") else 0.50
         point.y = {"shoulder": 0.15, "hip": 0.42, "knee": 0.65, "ankle": 0.87, "heel": 0.89, "foot": 0.88}[name.split("_")[-1]]
-    landmarks[LANDMARK_INDEX["left_foot"]].visibility = 0.1
-    landmarks[LANDMARK_INDEX["right_foot"]].visibility = 0.1
+    for side in ("left", "right"):
+        landmarks[LANDMARK_INDEX[f"{side}_knee"]].visibility = 0.1
+        landmarks[LANDMARK_INDEX[f"{side}_ankle"]].visibility = 0.1
     assessment = assess_camera(landmarks, 0.0)
     assert not assessment.reliable
-    assert "lighting" in assessment.guidance.lower()
+    assert "knee" in assessment.guidance.lower()
+
+
+def test_camera_tolerates_low_foot_confidence_when_core_joints_are_visible():
+    landmarks = [SimpleNamespace(x=0.5, y=0.5, visibility=0.95) for _ in range(33)]
+    for name, index in LANDMARK_INDEX.items():
+        point = landmarks[index]
+        point.x = 0.48 if name.startswith("left") else 0.50
+        point.y = {
+            "shoulder": 0.15,
+            "hip": 0.42,
+            "knee": 0.65,
+            "ankle": 0.87,
+            "heel": 0.89,
+            "foot": 0.88,
+        }[name.split("_")[-1]]
+    landmarks[LANDMARK_INDEX["left_foot"]].visibility = 0.1
+    landmarks[LANDMARK_INDEX["right_foot"]].visibility = 0.1
+
+    assessment = assess_camera(landmarks, 0.0)
+
+    assert assessment.reliable
+    assert assessment.measurement["valid"]
+
+
+def test_camera_falls_back_when_preferred_side_loses_core_visibility():
+    landmarks = [SimpleNamespace(x=0.5, y=0.5, visibility=0.95) for _ in range(33)]
+    for name, index in LANDMARK_INDEX.items():
+        point = landmarks[index]
+        point.x = 0.48 if name.startswith("left") else 0.50
+        point.y = {
+            "shoulder": 0.15,
+            "hip": 0.42,
+            "knee": 0.65,
+            "ankle": 0.87,
+            "heel": 0.89,
+            "foot": 0.88,
+        }[name.split("_")[-1]]
+        if name.startswith("left") and name.split("_")[-1] in {"hip", "knee", "ankle"}:
+            point.visibility = 0.1
+
+    assessment = assess_camera(landmarks, 0.0, preferred_side="left")
+
+    assert assessment.reliable
+    assert assessment.side == "right"
+    assert assessment.measurement["side"] == "right"
+
+
+def test_camera_does_not_reject_compact_body_height_during_active_rep():
+    landmarks = [SimpleNamespace(x=0.5, y=0.5, visibility=0.95) for _ in range(33)]
+    compact_y = {
+        "shoulder": 0.40,
+        "hip": 0.53,
+        "knee": 0.62,
+        "ankle": 0.72,
+        "heel": 0.74,
+        "foot": 0.73,
+    }
+    for name, index in LANDMARK_INDEX.items():
+        point = landmarks[index]
+        point.x = 0.49 if name.startswith("left") else 0.51
+        point.y = compact_y[name.split("_")[-1]]
+
+    standing_check = assess_camera(landmarks, 0.0)
+    active_rep_check = assess_camera(landmarks, 0.0, enforce_body_size=False)
+
+    assert not standing_check.reliable
+    assert "closer" in standing_check.guidance.lower()
+    assert active_rep_check.reliable
+    assert active_rep_check.measurement["valid"]
+
+
+def test_display_letterboxing_preserves_camera_aspect_ratio():
+    frame_4_by_3 = np.full((480, 640, 3), 255, dtype=np.uint8)
+    displayed = _fit_for_display(frame_4_by_3, (1280, 720))
+
+    assert displayed.shape == (720, 1280, 3)
+    # A 4:3 frame becomes 960x720 with equal 160-pixel side bars.
+    assert not displayed[:, :160].any()
+    assert displayed[:, 160:1120].all()
+    assert not displayed[:, 1120:].any()
 
 
 def _tracker():
@@ -144,6 +274,41 @@ def test_rep_state_transitions_and_completion():
     assert "BOTTOM" in phases
     assert "ASCENDING" in phases
     assert event and event["type"] == "completed"
+
+
+def test_separated_invalid_frames_do_not_trigger_consecutive_pose_loss():
+    tracker = SquatRepTracker({
+        "calibration_frames": 5,
+        "phase_confirm_frames": 2,
+        "return_confirm_frames": 2,
+        "maximum_consecutive_invalid_frames": 3,
+        "minimum_valid_frame_ratio": 0.5,
+        "minimum_valid_frames": 8,
+        "minimum_rep_duration": 0.5,
+    })
+    for index in range(5):
+        tracker.update(_tracker_frame(index * 0.1, 170, 0.40))
+
+    sequence = [
+        (0.5, 157, 0.43), (0.6, 145, 0.46),
+        (0.7, 122, 0.53), (0.8, 95, 0.59), (0.9, 95, 0.59), (1.0, 95, 0.59),
+        (1.1, 112, 0.55), (1.2, 135, 0.49),
+        (1.3, 158, 0.42), (1.4, 166, 0.40),
+        (1.5, 169, 0.40), (1.6, 170, 0.40), (1.7, 170, 0.40),
+    ]
+    event = None
+    active_frames = 0
+    for values in sequence:
+        update = tracker.update(_tracker_frame(*values))
+        event = update["event"] or event
+        if tracker.active:
+            active_frames += 1
+            if active_frames in {1, 4, 7}:
+                dropped = tracker.update(None)
+                assert dropped["event"] is None
+
+    assert event and event["type"] == "completed"
+    assert tracker.rep_number == 1
 
 
 def test_tiny_knee_bend_does_not_count_and_hysteresis_blocks_one_frame_start():
@@ -192,12 +357,33 @@ def test_shallow_depth_requires_multiple_signals():
     assert primary_rule(rules).name == "shallow_depth"
 
 
-def test_heel_lift_detection_requires_persistence():
+def test_heel_lift_detection_uses_persistence_or_strong_magnitude():
     features = good_features()
-    features.update(heel_lift_max=0.08, heel_lift_bottom_fraction=0.75)
+    features.update(heel_lift_max=0.052, heel_lift_bottom_fraction=0.75)
     assert any(rule.name == "heel_lift" for rule in evaluate_rules(features))
     features["heel_lift_bottom_fraction"] = 0.1
     assert not any(rule.name == "heel_lift" for rule in evaluate_rules(features))
+    features.update(heel_lift_max=0.08, heel_lift_bottom_fraction=0.0)
+    assert any(rule.name == "heel_lift" for rule in evaluate_rules(features))
+
+
+def test_strong_heel_lift_overrides_confident_good_model():
+    features = good_features()
+    features.update(heel_lift_max=0.07, heel_lift_bottom_fraction=0.0)
+
+    result = assess_completed_rep(
+        ConstantModel(0.95),
+        features,
+        completed_frames(),
+        BASELINE,
+        rep_number=1,
+        thresholds={"minimum_valid_frames": 8},
+    )
+
+    assert result["quality"] == "BAD"
+    assert result["primary_error"] == "heel_lift"
+    assert result["feedback"] == "Keep your heels grounded."
+    assert result["decision_reason"] == "strong_rule_override"
 
 
 def test_torso_lean_detection_is_relative_and_lenient():
@@ -206,6 +392,24 @@ def test_torso_lean_detection_is_relative_and_lenient():
     assert any(rule.name == "excessive_torso_lean" for rule in evaluate_rules(features))
     features.update(standing_torso_lean=35.0, max_torso_lean=60.0)
     assert not any(rule.name == "excessive_torso_lean" for rule in evaluate_rules(features))
+
+
+def test_strong_torso_lean_rule_overrides_confident_good_model():
+    features = good_features()
+    features.update(standing_torso_lean=5.0, max_torso_lean=50.0)
+
+    result = assess_completed_rep(
+        ConstantModel(0.95),
+        features,
+        completed_frames(),
+        BASELINE,
+        rep_number=1,
+        thresholds={"minimum_valid_frames": 8},
+    )
+
+    assert result["quality"] == "BAD"
+    assert result["primary_error"] == "excessive_torso_lean"
+    assert result["decision_reason"] == "strong_rule_override"
 
 
 def test_chest_collapse_requires_rise_and_lean_evidence():

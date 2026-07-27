@@ -32,6 +32,7 @@ class SquatRepTracker:
         self.rep_frames: list[dict] = []
         self.total_rep_frames = 0
         self.invalid_rep_frames = 0
+        self.consecutive_invalid_frames = 0
         self.rep_number = 0
         self.locked_side: str | None = None
         self.minimum_knee = 180.0
@@ -47,6 +48,7 @@ class SquatRepTracker:
         self.rep_frames = []
         self.total_rep_frames = 0
         self.invalid_rep_frames = 0
+        self.consecutive_invalid_frames = 0
         self.locked_side = None
         self.minimum_knee = 180.0
 
@@ -98,12 +100,16 @@ class SquatRepTracker:
             if self.active:
                 self.total_rep_frames += 1
                 self.invalid_rep_frames += 1
-                if self.invalid_rep_frames >= self.thresholds["maximum_consecutive_invalid_frames"]:
+                self.consecutive_invalid_frames += 1
+                if self.consecutive_invalid_frames >= self.thresholds["maximum_consecutive_invalid_frames"]:
                     self.reset_attempt()
                     event = {"type": "rejected", "reason": "Pose was lost during the repetition."}
             return {"phase": self.phase, "event": event}
 
+        self.consecutive_invalid_frames = 0
         frame = self._smooth_frame(frame)
+        if self.active and frame.get("side") in {"left", "right"}:
+            self.locked_side = str(frame["side"])
         if self.phase == "CALIBRATING":
             event = self._calibrate(frame)
             self.previous_frame = frame
@@ -128,6 +134,7 @@ class SquatRepTracker:
                 self.rep_frames = []
                 self.total_rep_frames = 0
                 self.invalid_rep_frames = 0
+                self.consecutive_invalid_frames = 0
                 self.minimum_knee = frame["knee_angle"]
                 self.transition_count = 0
 
